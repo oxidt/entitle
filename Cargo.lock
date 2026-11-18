@@ -958,7 +958,7 @@ dependencies = [
 
 [[package]]
 name = "entitle-apple"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "app-store-server-library",
  "async-trait",
@@ -976,7 +976,7 @@ dependencies = [
 
 [[package]]
 name = "entitle-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -989,7 +989,7 @@ dependencies = [
 
 [[package]]
 name = "entitle-creem"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1007,7 +1007,7 @@ dependencies = [
 
 [[package]]
 name = "entitle-google"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -1025,7 +1025,7 @@ dependencies = [
 
 [[package]]
 name = "entitle-server"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
