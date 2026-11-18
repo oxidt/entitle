@@ -61,8 +61,11 @@ returning a short-lived JWT your backend signs for its signed-in user (see
 [Signed identity](../../docs/api.md#signed-identity)). Required once the project
 enables `require_signed_identity`; anonymous ids never need one.
 
-**Storage:** `localStorage` when usable, else in-memory. For Capacitor, pass
-Preferences:
+**Storage:** `localStorage` when usable, else in-memory. The app user id and the cache
+are stored per server and public key (`entitle:app_user_id:<baseUrl> <apiKey>`), so two
+projects sharing storage never share an anonymous id. Unscoped keys from older versions
+are claimed once by the first configuration (a cache stamped for another project is left
+to it; an unstamped cache is refetched). For Capacitor, pass Preferences:
 
 ```ts
 storage: {

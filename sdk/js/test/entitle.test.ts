@@ -13,6 +13,8 @@ import {
 } from "../src/index.js";
 
 const BASE = "https://entitle.test";
+const KEY_APP_USER_ID = `entitle:app_user_id:${BASE} pk_test`;
+const KEY_CUSTOMER_INFO = `entitle:customer_info:${BASE} pk_test`;
 const ANON_RE = /^\$entitle_anon:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function info(appUserId: string, entitlements: string[] = [], extra: Partial<CustomerInfo> = {}): CustomerInfo {
@@ -105,7 +107,7 @@ describe("configure", () => {
     const { entitle } = await setup({ storage, appUserId: "user_42" });
     expect(entitle.appUserId).toBe("user_42");
     expect(entitle.isAnonymous).toBe(false);
-    expect(await storage.get("entitle:app_user_id")).toBe("user_42");
+    expect(await storage.get(KEY_APP_USER_ID)).toBe("user_42");
   });
 
   test("works with an async storage (Capacitor Preferences style)", async () => {
@@ -135,6 +137,46 @@ describe("configure", () => {
     expect(entitle.appUserId).toMatch(ANON_RE);
     await entitle.getCustomerInfo();
     expect(entitle.isEntitled("pro")).toBe(true);
+  });
+});
+
+describe("storage scope", () => {
+  const configure = (storage: EntitleStorage, apiKey = "pk_test", baseUrl = BASE) =>
+    Entitle.configure({ apiKey, baseUrl, storage });
+
+  test("anonymous ids are separate per project and server", async () => {
+    const storage = memoryStorage();
+    const a = (await configure(storage)).appUserId;
+    const otherProject = (await configure(storage, "pk_other")).appUserId;
+    const otherServer = (await configure(storage, "pk_test", "https://other.test")).appUserId;
+    expect(new Set([a, otherProject, otherServer]).size).toBe(3);
+    expect((await configure(storage)).appUserId).toBe(a);
+  });
+
+  test("a legacy anonymous id is claimed by the first configuration only", async () => {
+    const storage = memoryStorage();
+    await storage.set("entitle:app_user_id", "$entitle_anon:legacy");
+    expect((await configure(storage)).appUserId).toBe("$entitle_anon:legacy");
+    expect(await storage.get("entitle:app_user_id")).toBeNull();
+    expect((await configure(storage, "pk_other")).appUserId).toMatch(ANON_RE);
+    expect((await configure(storage)).appUserId).toBe("$entitle_anon:legacy");
+  });
+
+  test("legacy keys stamped for another project are left to it", async () => {
+    const storage = memoryStorage();
+    await storage.set("entitle:app_user_id", "a");
+    await storage.set(
+      "entitle:customer_info",
+      JSON.stringify({ scope: `${BASE} pk_other`, appUserId: "a", fetchedAt: Date.now(), info: info("a", ["pro"]) }),
+    );
+    const mine = await configure(storage);
+    expect(mine.appUserId).toMatch(ANON_RE);
+    expect(mine.isEntitled("pro")).toBe(false);
+    // The project the legacy cache was stamped for adopts both, without a request.
+    const theirs = await configure(storage, "pk_other");
+    expect(theirs.appUserId).toBe("a");
+    expect(theirs.isEntitled("pro")).toBe(true);
+    expect(await storage.get("entitle:app_user_id")).toBeNull();
   });
 });
 
@@ -232,14 +274,16 @@ describe("getCustomerInfo", () => {
     expect((await setup({ storage, appUserId: "a" })).entitle.isEntitled("pro")).toBe(true);
   });
 
-  test("an unscoped cache from an older SDK is still used", async () => {
+  test("an unscoped cache from an older SDK is refetched, never adopted", async () => {
     const storage = memoryStorage();
     await storage.set("entitle:app_user_id", "a");
     await storage.set("entitle:customer_info", JSON.stringify({ appUserId: "a", fetchedAt: Date.now(), info: info("a", ["pro"]) }));
-    expect((await setup({ storage })).entitle.isEntitled("pro")).toBe(true);
-    // Adopted by that configuration: another project no longer sees it.
-    const other = await Entitle.configure({ apiKey: "pk_other", baseUrl: BASE, storage });
-    expect(other.isEntitled("pro")).toBe(false);
+    const { entitle, calls } = await setup({ storage, replies: [json(info("a"))] });
+    expect(entitle.appUserId).toBe("a");
+    expect(entitle.isEntitled("pro")).toBe(false);
+    await entitle.getCustomerInfo();
+    expect(calls).toHaveLength(1);
+    expect(await storage.get("entitle:customer_info")).toBeNull();
   });
 
   test("locally expired entitlements are not active", async () => {
@@ -310,8 +354,8 @@ describe("identity", () => {
     expect(entitle.appUserId).toMatch(ANON_RE);
     expect(entitle.appUserId.startsWith(ANONYMOUS_PREFIX)).toBe(true);
     expect(entitle.isEntitled("pro")).toBe(false);
-    expect(await storage.get("entitle:customer_info")).toBeNull();
-    expect(await storage.get("entitle:app_user_id")).toBe(entitle.appUserId);
+    expect(await storage.get(KEY_CUSTOMER_INFO)).toBeNull();
+    expect(await storage.get(KEY_APP_USER_ID)).toBe(entitle.appUserId);
   });
 
   test("a response for a user who logged out meanwhile is not cached", async () => {

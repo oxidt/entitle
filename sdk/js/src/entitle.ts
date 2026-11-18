@@ -14,8 +14,14 @@ export const ANONYMOUS_PREFIX = "$entitle_anon:";
 /** `getCustomerInfo()` returns the cached info while it is younger than this. */
 export const CACHE_TTL_MS = 5 * 60 * 1000;
 
-const KEY_APP_USER_ID = "entitle:app_user_id";
-const KEY_CUSTOMER_INFO = "entitle:customer_info";
+/** Storage keys of older SDKs, shared by every project and server. */
+const LEGACY_KEY_APP_USER_ID = "entitle:app_user_id";
+const LEGACY_KEY_CUSTOMER_INFO = "entitle:customer_info";
+
+/** Storage keys, per server and project: anonymous ids and caches are never shared between them. */
+function storageKeys(scope: string) {
+  return { appUserId: `entitle:app_user_id:${scope}`, customerInfo: `entitle:customer_info:${scope}` };
+}
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -54,7 +60,7 @@ export interface LogInResult {
 }
 
 interface CachedInfo {
-  /** Server and project the info came from: storage may be shared between configurations. */
+  /** Server and project the info came from (`<baseUrl> <apiKey>`). */
   scope: string;
   appUserId: string;
   fetchedAt: number;
@@ -64,6 +70,8 @@ interface CachedInfo {
 export class Entitle {
   private cache: CachedInfo | null;
   private readonly listeners = new Set<(info: CustomerInfo) => void>();
+  private readonly scope: string;
+  private readonly keys: ReturnType<typeof storageKeys>;
 
   private constructor(
     private readonly apiKey: string,
@@ -75,6 +83,8 @@ export class Entitle {
     private readonly identityToken: EntitleOptions["identityToken"],
   ) {
     this.cache = cache;
+    this.scope = `${baseUrl} ${apiKey}`;
+    this.keys = storageKeys(this.scope);
   }
 
   static async configure(options: EntitleOptions): Promise<Entitle> {
@@ -82,25 +92,20 @@ export class Entitle {
       throw new TypeError("Entitle: apiKey must be a public key (pk_…)");
     }
     const storage = options.storage ?? defaultStorage();
-    const stored = await read(storage, KEY_APP_USER_ID);
-    const appUserId = options.appUserId ?? stored ?? ANONYMOUS_PREFIX + uuidV4();
-    if (appUserId !== stored) await write(storage, KEY_APP_USER_ID, appUserId);
-
     const baseUrl = options.baseUrl.replace(/\/+$/, "");
     const scope = `${baseUrl} ${options.apiKey}`;
+    const keys = storageKeys(scope);
+    await migrateLegacyStorage(storage, scope);
+
+    const stored = await read(storage, keys.appUserId);
+    const appUserId = options.appUserId ?? stored ?? ANONYMOUS_PREFIX + uuidV4();
+    if (appUserId !== stored) await write(storage, keys.appUserId, appUserId);
+
     let cache: CachedInfo | null = null;
     try {
-      const raw = await read(storage, KEY_CUSTOMER_INFO);
+      const raw = await read(storage, keys.customerInfo);
       const parsed = raw ? (JSON.parse(raw) as CachedInfo) : null;
-      // No scope: written by an older SDK. The first configuration after the update
-      // adopts it (so an offline unlock survives) and stamps it; any other one then
-      // ignores it.
-      if (parsed && parsed.scope === undefined && parsed.appUserId === appUserId) {
-        cache = { ...parsed, scope };
-        await write(storage, KEY_CUSTOMER_INFO, JSON.stringify(cache));
-      } else if (parsed?.scope === scope && parsed.appUserId === appUserId) {
-        cache = parsed;
-      }
+      if (parsed?.scope === scope && parsed.appUserId === appUserId) cache = parsed;
     } catch {
       // corrupt cache: refetch
     }
@@ -229,16 +234,16 @@ export class Entitle {
     if (appUserId === this.userId) return;
     this.userId = appUserId;
     this.cache = null;
-    await write(this.storage, KEY_APP_USER_ID, appUserId);
-    await remove(this.storage, KEY_CUSTOMER_INFO);
+    await write(this.storage, this.keys.appUserId, appUserId);
+    await remove(this.storage, this.keys.customerInfo);
   }
 
   private async update(forUser: string, info: CustomerInfo): Promise<void> {
     // The user switched while the request was in flight: don't cache someone else's info.
     if (forUser !== this.userId) return;
     const previous = this.cache?.info;
-    this.cache = { scope: `${this.baseUrl} ${this.apiKey}`, appUserId: forUser, fetchedAt: Date.now(), info };
-    await write(this.storage, KEY_CUSTOMER_INFO, JSON.stringify(this.cache));
+    this.cache = { scope: this.scope, appUserId: forUser, fetchedAt: Date.now(), info };
+    await write(this.storage, this.keys.customerInfo, JSON.stringify(this.cache));
     if (previous && sameInfo(previous, info)) return;
     for (const listener of [...this.listeners]) {
       try {
@@ -296,6 +301,37 @@ export class Entitle {
 /** Equal apart from `request_date`, which changes on every response. */
 function sameInfo(a: CustomerInfo, b: CustomerInfo): boolean {
   return JSON.stringify({ ...a, request_date: "" }) === JSON.stringify({ ...b, request_date: "" });
+}
+
+/**
+ * Moves the unscoped keys of older SDKs to `scope`'s keys, at most once.
+ *
+ * - A legacy cache stamped with another scope proves the legacy id was that configuration's:
+ *   both are left for it.
+ * - Otherwise the first configuration claims the legacy id, and the legacy keys are removed so
+ *   no other project adopts the same anonymous id. The cache moves only if it is stamped with
+ *   this scope; an unstamped one (even older SDKs) is dropped and refetched.
+ */
+async function migrateLegacyStorage(storage: EntitleStorage, scope: string): Promise<void> {
+  const legacyId = await read(storage, LEGACY_KEY_APP_USER_ID);
+  const rawCache = await read(storage, LEGACY_KEY_CUSTOMER_INFO);
+  if (legacyId === null && rawCache === null) return;
+  let cache: Partial<CachedInfo> | null = null;
+  try {
+    cache = rawCache ? (JSON.parse(rawCache) as Partial<CachedInfo>) : null;
+  } catch {
+    // corrupt: dropped below
+  }
+  if (cache?.scope !== undefined && cache.scope !== scope) return;
+  const keys = storageKeys(scope);
+  if (legacyId !== null && (await read(storage, keys.appUserId)) === null) {
+    await write(storage, keys.appUserId, legacyId);
+    if (rawCache !== null && cache?.scope === scope && cache.appUserId === legacyId) {
+      await write(storage, keys.customerInfo, rawCache);
+    }
+  }
+  await remove(storage, LEGACY_KEY_APP_USER_ID);
+  await remove(storage, LEGACY_KEY_CUSTOMER_INFO);
 }
 
 // Persistence is best effort: a failing storage must not break purchases.
