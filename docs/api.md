@@ -37,6 +37,7 @@ Every non-2xx response has this body:
 | 409 | `transfer_refused` | `/sync` of a purchase whose store account token belongs to another customer |
 | 413 | `payload_too_large` | request body over 2 MB |
 | 422 | `store_credentials` | the project's store credentials were rejected |
+| 429 | `rate_limited` | over a request budget (see "Request budgets"); retry after `Retry-After` seconds |
 | 501 | `not_implemented` | the store adapter is not implemented yet |
 | 502 | `store_unavailable` | the store API failed; retry later |
 | 500 | `internal` | bug or database failure |
@@ -158,6 +159,20 @@ signed with the project's identity secret (`POST /admin/v1/projects/{id}/identit
 - `require_signed_identity` is off by default, which keeps apps without a backend
   working. If your users sign in with a backend, **turn it on**: without it, anyone
   who knows or guesses an identified app user id can read its state and act as it.
+
+### Request budgets
+
+Public-key calls that create customers or call a store (`GET /v1/customers/{app_user_id}`,
+`login`, `sync`, `checkout`) draw from two in-memory token buckets: one per client IP
+(`ENTITLE_SDK_RATE_PER_IP`, default 600 requests per minute) and one per project
+(`ENTITLE_SDK_RATE_PER_PROJECT`, default 6000 per minute). Each allows a burst of its
+per-minute rate and refills continuously. Over either: `429 rate_limited` with
+`Retry-After` (seconds). The client IP is the TCP peer, or the last `X-Forwarded-For`
+entry with `ENTITLE_TRUST_PROXY`; IPv6 clients share a bucket per /64. Secret-key calls
+are not budgeted. Budgets are per process and reset on restart.
+
+`sync` fetches the purchase from the store before it creates the customer, so ids the
+store does not know create nothing.
 
 ### `GET /v1/customers/{app_user_id}`
 

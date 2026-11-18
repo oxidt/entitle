@@ -4,6 +4,7 @@ use anyhow::Context;
 use clap::Parser;
 use entitle_server::cli::{Cli, Command, run_admin};
 use entitle_server::config::Config;
+use entitle_server::rate_limit::SdkBudget;
 use entitle_server::{Adapters, AppState, Cipher, MIGRATOR, fx, outbox, router};
 use sqlx::postgres::PgPoolOptions;
 use tokio::sync::watch;
@@ -60,6 +61,7 @@ async fn serve() -> anyhow::Result<()> {
         webhook_allow_private: config.webhook_allow_private,
         trust_proxy: config.trust_proxy,
         public_url: config.public_url.map(Into::into),
+        sdk_budget: SdkBudget::per_minute(config.sdk_rate_per_ip, config.sdk_rate_per_project),
     };
     let listener = tokio::net::TcpListener::bind(config.bind)
         .await

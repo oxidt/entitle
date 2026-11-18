@@ -15,12 +15,13 @@ use uuid::Uuid;
 
 use crate::AppState;
 use crate::adapters::load_credentials;
-use crate::auth::{ProjectKey, SecretKey};
+use crate::auth::SecretKey;
 use crate::customers::{self, CustomerInfo};
 use crate::error::{ApiError, ApiResult};
 use crate::extract::{Json, Path};
 use crate::identity_token::{self, IdentityToken};
 use crate::purchases::{Source, TransferRefused, apply_snapshot};
+use crate::rate_limit::BudgetedKey;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -88,7 +89,7 @@ pub(crate) async fn existing(
 }
 
 async fn get_customer(
-    key: ProjectKey,
+    BudgetedKey(key): BudgetedKey,
     IdentityToken(token): IdentityToken,
     State(state): State<AppState>,
     Path(app_user_id): Path<String>,
@@ -117,7 +118,7 @@ struct LogInResponse {
 }
 
 async fn log_in(
-    key: ProjectKey,
+    BudgetedKey(key): BudgetedKey,
     IdentityToken(token): IdentityToken,
     State(state): State<AppState>,
     Path(app_user_id): Path<String>,
@@ -155,7 +156,7 @@ struct Sync {
 }
 
 async fn sync(
-    key: ProjectKey,
+    BudgetedKey(key): BudgetedKey,
     IdentityToken(token): IdentityToken,
     State(state): State<AppState>,
     Path(app_user_id): Path<String>,
@@ -163,11 +164,13 @@ async fn sync(
 ) -> ApiResult<Json<CustomerInfo>> {
     identity_token::authorize(&state, &key, &app_user_id, token.as_deref()).await?;
     let project = key.project_id;
-    let customer = customers::get_or_create(&state.db, project, &app_user_id).await?;
+    entitle_core::identity::validate_app_user_id(&app_user_id)?;
     let snapshots = state
         .adapters
         .fetch_purchases(&state.db, &state.cipher, project, body.store, &body.id)
         .await?;
+    // Only once the store knows the purchase: unknown ids must not create customers.
+    let customer = customers::get_or_create(&state.db, project, &app_user_id).await?;
     let now = Utc::now();
     let mut tx = state.db.begin().await?;
     for s in &snapshots {
@@ -196,7 +199,7 @@ struct Checkout {
 }
 
 async fn checkout(
-    key: ProjectKey,
+    BudgetedKey(key): BudgetedKey,
     IdentityToken(token): IdentityToken,
     State(state): State<AppState>,
     Path(app_user_id): Path<String>,

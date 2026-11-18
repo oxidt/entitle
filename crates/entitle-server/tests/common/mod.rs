@@ -15,6 +15,7 @@ use entitle_core::{
     CreemCredentials, GoogleCredentials, InboundNotification, ParsedNotification, PurchaseSnapshot,
     StoreAdapter,
 };
+use entitle_server::rate_limit::SdkBudget;
 use entitle_server::{Adapters, AppState, Cipher, router};
 use http_body_util::BodyExt;
 use serde::{Deserialize, Serialize};
@@ -139,6 +140,11 @@ impl TestApp {
     /// entitlement `pro` unlocked by `pro_monthly` (App Store), `pro_yearly`
     /// (Play Store) and `prod_pro` (Creem).
     pub async fn new(db: PgPool) -> TestApp {
+        Self::with_sdk_budget(db, SdkBudget::per_minute(600, 6000)).await
+    }
+
+    /// [`TestApp::new`] with other SDK request budgets.
+    pub async fn with_sdk_budget(db: PgPool, sdk_budget: SdkBudget) -> TestApp {
         let fakes = Fakes {
             creem: Arc::new(FakeAdapter::new()),
             apple: Arc::new(FakeAdapter::new()),
@@ -156,6 +162,7 @@ impl TestApp {
             webhook_allow_private: true,
             trust_proxy: false,
             public_url: Some(PUBLIC_URL.into()),
+            sdk_budget,
         };
         let mut app = TestApp {
             router: router(state),

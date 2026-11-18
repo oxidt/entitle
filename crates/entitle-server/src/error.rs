@@ -1,5 +1,5 @@
 use axum::Json;
-use axum::http::StatusCode;
+use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use entitle_core::AdapterError;
 use entitle_core::identity::IdentityError;
@@ -22,6 +22,9 @@ pub enum ApiError {
     MethodNotAllowed,
     #[error("{0}")]
     PayloadTooLarge(String),
+    /// Over a request budget; answered with `Retry-After`.
+    #[error("too many requests, retry in {retry_after} s")]
+    TooManyRequests { retry_after: u64 },
     #[error(transparent)]
     TransferRefused(#[from] crate::purchases::TransferRefused),
     #[error(transparent)]
@@ -46,6 +49,7 @@ impl ApiError {
             ApiError::Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ApiError::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
             ApiError::PayloadTooLarge(_) => (StatusCode::PAYLOAD_TOO_LARGE, "payload_too_large"),
+            ApiError::TooManyRequests { .. } => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             ApiError::TransferRefused(_) => (StatusCode::CONFLICT, "transfer_refused"),
             ApiError::Adapter(e) => match e {
                 AdapterError::InvalidSignature(_) => {
@@ -90,11 +94,17 @@ impl IntoResponse for ApiError {
             }
             other => other.to_string(),
         };
-        (
+        let mut response = (
             status,
             Json(json!({ "error": { "code": code, "message": message } })),
         )
-            .into_response()
+            .into_response();
+        if let ApiError::TooManyRequests { retry_after } = self {
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, retry_after.into());
+        }
+        response
     }
 }
 

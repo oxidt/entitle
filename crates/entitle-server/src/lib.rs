@@ -47,6 +47,8 @@ pub struct AppState {
     pub trust_proxy: bool,
     /// See [`config::Config::public_url`]; MCP is off without it.
     pub public_url: Option<Arc<str>>,
+    /// Budgets for public-key SDK calls; see [`rate_limit::SdkBudget`].
+    pub sdk_budget: rate_limit::SdkBudget,
 }
 
 pub fn router(state: AppState) -> Router {

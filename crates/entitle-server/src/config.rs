@@ -23,6 +23,11 @@ pub struct Config {
     /// `ENTITLE_PUBLIC_URL`, e.g. `https://entitle.example.com`: where clients reach this
     /// server. Enables the MCP endpoint and its OAuth authorization server.
     pub public_url: Option<String>,
+    /// `ENTITLE_SDK_RATE_PER_IP`: public-key requests per minute and client IP to the
+    /// SDK routes that create customers or call a store. Default 600.
+    pub sdk_rate_per_ip: u32,
+    /// `ENTITLE_SDK_RATE_PER_PROJECT`: the same, per project. Default 6000.
+    pub sdk_rate_per_project: u32,
 }
 
 impl Config {
@@ -46,6 +51,8 @@ impl Config {
                 Ok(url) if !url.is_empty() => Some(parse_public_url(&url)?),
                 _ => None,
             },
+            sdk_rate_per_ip: per_minute("ENTITLE_SDK_RATE_PER_IP", 600)?,
+            sdk_rate_per_project: per_minute("ENTITLE_SDK_RATE_PER_PROJECT", 6000)?,
         })
     }
 }
@@ -56,6 +63,17 @@ fn flag(name: &str) -> anyhow::Result<bool> {
         Ok("true" | "1") => Ok(true),
         Ok("false" | "0" | "") | Err(_) => Ok(false),
         Ok(other) => bail!("{name} must be true or false, got `{other}`"),
+    }
+}
+
+/// A positive request rate, `default` when unset.
+fn per_minute(name: &str, default: u32) -> anyhow::Result<u32> {
+    match std::env::var(name).as_deref() {
+        Err(_) | Ok("") => Ok(default),
+        Ok(value) => match value.parse() {
+            Ok(n) if n > 0 => Ok(n),
+            _ => bail!("{name} must be a positive number of requests per minute, got `{value}`"),
+        },
     }
 }
 

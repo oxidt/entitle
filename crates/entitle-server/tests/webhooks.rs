@@ -634,6 +634,7 @@ async fn real_adapters_are_wired_to_webhooks(db: PgPool) {
             webhook_allow_private: true,
             trust_proxy: false,
             public_url: Some(common::PUBLIC_URL.into()),
+            sdk_budget: entitle_server::rate_limit::SdkBudget::per_minute(600, 6000),
         }),
         ..fake
     };
