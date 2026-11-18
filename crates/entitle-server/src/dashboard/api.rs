@@ -50,10 +50,8 @@ pub async fn call<T: DeserializeOwned>(
     let router = axum::Router::new()
         .nest("/admin/v1", crate::routes::admin::router())
         .with_state(state.clone());
-    let response = router
-        .oneshot(req)
-        .await
-        .map_err(|e| ApiFailure(e.to_string()))?;
+    // The router's error type is `Infallible`.
+    let Ok(response) = router.oneshot(req).await;
     let status = response.status();
     let bytes = response
         .into_body()
