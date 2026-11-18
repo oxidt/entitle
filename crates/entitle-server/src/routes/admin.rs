@@ -1068,10 +1068,12 @@ async fn attach_product(
     .await?;
     if r.rows_affected() == 0 {
         let exists: Option<(i32,)> = sqlx::query_as(
-            "SELECT 1 FROM entitlement_products WHERE entitlement_id = $1 AND product_id = $2",
+            "SELECT 1 FROM entitlement_products ep JOIN entitlements e ON e.id = ep.entitlement_id
+             WHERE ep.entitlement_id = $1 AND ep.product_id = $2 AND e.project_id = $3",
         )
         .bind(entitlement_id)
         .bind(product_id)
+        .bind(project_id)
         .fetch_optional(&state.db)
         .await?;
         if exists.is_none() {

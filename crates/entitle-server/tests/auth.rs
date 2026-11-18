@@ -216,6 +216,50 @@ async fn credentials_are_validated_encrypted_and_never_returned(db: PgPool) {
     assert!(!String::from_utf8_lossy(&sealed).contains("creem_test"));
 }
 
+// The "already attached" answer must not leak an attachment from another project.
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn attach_product_is_scoped_to_the_project(db: PgPool) {
+    let app = TestApp::new(db).await;
+    let base = format!("/admin/v1/projects/{}", app.project);
+    let (_, ents) = app
+        .call(
+            Method::GET,
+            &format!("{base}/entitlements"),
+            Some(ADMIN),
+            None,
+        )
+        .await;
+    let eid = ents[0]["id"].as_str().unwrap();
+    let pid = ents[0]["product_ids"][0].as_str().unwrap();
+    let attach =
+        |project: String| format!("/admin/v1/projects/{project}/entitlements/{eid}/products/{pid}");
+
+    // Already attached in its own project: idempotent success.
+    let (s, _) = app
+        .call(
+            Method::PUT,
+            &attach(app.project.to_string()),
+            Some(ADMIN),
+            None,
+        )
+        .await;
+    assert_eq!(s, StatusCode::NO_CONTENT);
+
+    let (s, other) = app
+        .admin(Method::POST, "/admin/v1/projects", json!({"name": "Other"}))
+        .await;
+    assert_eq!(s, StatusCode::CREATED);
+    let (s, _) = app
+        .call(
+            Method::PUT,
+            &attach(other["id"].as_str().unwrap().into()),
+            Some(ADMIN),
+            None,
+        )
+        .await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+}
+
 #[sqlx::test(migrator = "entitle_server::MIGRATOR")]
 async fn admin_catalog_crud(db: PgPool) {
     let app = TestApp::new(db).await;
