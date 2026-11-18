@@ -53,3 +53,15 @@ async fn dashboard_asks_for_login_or_shows_build_hint(db: PgPool) {
     assert_eq!(res.status(), StatusCode::TEMPORARY_REDIRECT);
     assert_eq!(res.headers()[header::LOCATION], "/dashboard/");
 }
+
+// Pages can show one-time secrets; with or without an asset bundle, none may be cached.
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn dashboard_responses_are_not_stored(db: PgPool) {
+    let app = TestApp::new(db).await;
+
+    for uri in ["/dashboard/", "/dashboard/login", "/dashboard/customers"] {
+        let req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        let res = app.router.clone().oneshot(req).await.unwrap();
+        assert_eq!(res.headers()[header::CACHE_CONTROL], "no-store", "{uri}");
+    }
+}

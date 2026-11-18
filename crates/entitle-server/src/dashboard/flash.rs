@@ -38,13 +38,16 @@ pub fn set(cx: &Cx, target: &str, kind: Kind, text: impl Into<String>) {
         text: text.into(),
     };
     let value = serde_json::to_string(&flash).expect("flash serializes");
-    private_cookies(cx).add(
-        Cookie::build((COOKIE, value))
-            .path(BASE)
-            .http_only(true)
-            .same_site(SameSite::Strict)
-            .build(),
-    );
+    private_cookies(cx).add(flash_cookie(value, super::secure(cx)));
+}
+
+fn flash_cookie(value: String, secure: bool) -> Cookie<'static> {
+    Cookie::build((COOKIE, value))
+        .path(BASE)
+        .http_only(true)
+        .secure(secure)
+        .same_site(SameSite::Strict)
+        .build()
 }
 
 /// The pending flash, consumed.
@@ -57,4 +60,23 @@ pub fn take(cx: &Cx) -> Option<Flash> {
         jar.remove(Cookie::build(COOKIE).path(BASE).build());
     }
     flash
+}
+
+#[cfg(test)]
+mod tests {
+    use topcoat::cookie::SameSite;
+
+    use super::flash_cookie;
+
+    #[test]
+    fn cookie_is_secure_behind_an_https_public_url() {
+        let secure = super::super::secure_cookies(Some("https://entitle.example.com"), None);
+        let cookie = flash_cookie(String::new(), secure);
+        assert_eq!(cookie.secure(), Some(true));
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.same_site(), Some(SameSite::Strict));
+
+        let secure = super::super::secure_cookies(Some("http://localhost:8080"), None);
+        assert_eq!(flash_cookie(String::new(), secure).secure(), Some(false));
+    }
 }

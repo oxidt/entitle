@@ -56,7 +56,7 @@ Prebuilt images: `ghcr.io/oxidt/entitle:latest` (every commit on `main` is also 
 | `ENTITLE_ENCRYPTION_KEY` | yes | base64 of 32 bytes; encrypts store credentials and webhook secrets. Losing it makes them unreadable. |
 | `ENTITLE_BIND` | no | listen address, default `0.0.0.0:8080` |
 | `ENTITLE_WEBHOOK_ALLOW_PRIVATE` | no | `true` lets outgoing webhooks target any http(s) host, incl. the private network (`http://backend:8080`). Default: public https hosts only. |
-| `ENTITLE_PUBLIC_URL` | no | public origin, e.g. `https://entitle.example.com`; enables the MCP endpoint `/mcp` and its OAuth server (see `docs/api.md`) |
+| `ENTITLE_PUBLIC_URL` | no | public origin, e.g. `https://entitle.example.com`; enables the MCP endpoint `/mcp` and its OAuth server (see `docs/api.md`); an `https` origin also marks the dashboard cookies `Secure` |
 | `ENTITLE_TRUST_PROXY` | no | `true` behind a reverse proxy that sets `X-Forwarded-For`: rate limits then key on its last entry instead of the TCP peer |
 | `ENTITLE_SDK_RATE_PER_IP` | no | public-key requests per minute and client IP to the SDK routes that create customers or call a store (customer lookup, login, sync, checkout), default `600`; over it: `429` (see `docs/api.md`) |
 | `ENTITLE_SDK_RATE_PER_PROJECT` | no | the same per project, default `6000` |

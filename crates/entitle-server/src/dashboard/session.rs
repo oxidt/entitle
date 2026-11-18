@@ -12,7 +12,7 @@ use topcoat::{
         content::Form,
         error::{SeeOther, redirect, see_other},
         page, query_params,
-        request::{headers, uri},
+        request::uri,
         route,
     },
     view::{View, view},
@@ -124,22 +124,40 @@ async fn sign_in(cx: &Cx, Form(form): Form<SignIn>) -> Result<SeeOther> {
         return Ok(see_other(format!("{LOGIN}?error=1")));
     }
     let expires = Utc::now().timestamp() + LIFETIME_HOURS * 3600;
-    let secure = headers(cx)
-        .get("x-forwarded-proto")
-        .is_some_and(|p| p.as_bytes() == b"https");
-    signed_cookies(cx).add(
-        Cookie::build((COOKIE, expires.to_string()))
-            .path(BASE)
-            .http_only(true)
-            .secure(secure)
-            .same_site(SameSite::Strict)
-            .build(),
-    );
+    signed_cookies(cx).add(session_cookie(expires, super::secure(cx)));
     Ok(see_other("/dashboard/"))
+}
+
+fn session_cookie(expires: i64, secure: bool) -> Cookie<'static> {
+    Cookie::build((COOKIE, expires.to_string()))
+        .path(BASE)
+        .http_only(true)
+        .secure(secure)
+        .same_site(SameSite::Strict)
+        .build()
 }
 
 #[route(POST "/dashboard/logout")]
 async fn sign_out(cx: &Cx) -> Result<SeeOther> {
     signed_cookies(cx).remove(Cookie::build(COOKIE).path(BASE).build());
     Ok(see_other(LOGIN))
+}
+
+#[cfg(test)]
+mod tests {
+    use topcoat::cookie::SameSite;
+
+    use super::session_cookie;
+
+    #[test]
+    fn cookie_is_secure_behind_an_https_public_url() {
+        let secure = super::super::secure_cookies(Some("https://entitle.example.com"), None);
+        let cookie = session_cookie(0, secure);
+        assert_eq!(cookie.secure(), Some(true));
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.same_site(), Some(SameSite::Strict));
+
+        let secure = super::super::secure_cookies(Some("http://localhost:8080"), None);
+        assert_eq!(session_cookie(0, secure).secure(), Some(false));
+    }
 }
