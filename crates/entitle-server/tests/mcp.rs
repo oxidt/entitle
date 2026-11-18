@@ -1,6 +1,9 @@
 mod common;
 
+use std::net::SocketAddr;
+
 use axum::body::Body;
+use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode, header};
 use axum::response::Response;
 use base64::Engine;
@@ -460,4 +463,87 @@ async fn read_tools_hide_customer_credentials(db: PgPool) {
     assert_eq!(alice["customer_id"], ids[1]);
     let customers: Value = serde_json::from_str(&texts[0]).unwrap();
     assert_eq!(customers.as_array().unwrap().len(), 2);
+}
+
+/// `POST /oauth/register` from the client at `peer`.
+fn register_request(peer: &str) -> Request<Body> {
+    let mut req = Request::post("/oauth/register")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(json!({"redirect_uris": [CALLBACK]}).to_string()))
+        .unwrap();
+    req.extensions_mut()
+        .insert(ConnectInfo(peer.parse::<SocketAddr>().unwrap()));
+    req
+}
+
+async fn register_from(app: &TestApp, peer: &str) -> StatusCode {
+    send(app, register_request(peer)).await.0
+}
+
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn pending_registrations_are_capped_per_source(db: PgPool) {
+    let app = TestApp::new(db).await;
+    for _ in 0..10 {
+        assert_eq!(register_from(&app, "10.0.0.1:1").await, StatusCode::CREATED);
+    }
+    assert_eq!(
+        register_from(&app, "10.0.0.1:2").await,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    // IPv6 sources share an allocation per /64.
+    for _ in 0..10 {
+        assert_eq!(
+            register_from(&app, "[2001:db8::1]:1").await,
+            StatusCode::CREATED
+        );
+    }
+    assert_eq!(
+        register_from(&app, "[2001:db8::2]:1").await,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(register_from(&app, "10.0.0.2:1").await, StatusCode::CREATED);
+}
+
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn pending_registrations_expire_after_an_hour(db: PgPool) {
+    let app = TestApp::new(db).await;
+    sqlx::query(
+        "INSERT INTO mcp_clients (client_id, redirect_uris, source, created_at)
+         SELECT 'old_' || i, '{}', '10.0.0.1', now() - interval '61 minutes'
+         FROM generate_series(1, 10) i",
+    )
+    .execute(&app.db)
+    .await
+    .unwrap();
+    assert_eq!(register_from(&app, "10.0.0.1:1").await, StatusCode::CREATED);
+    assert_eq!(
+        app.count("SELECT count(*) FROM mcp_clients WHERE client_id LIKE 'old_%'")
+            .await,
+        0
+    );
+}
+
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn the_global_pending_cap_holds_under_concurrency(db: PgPool) {
+    let app = TestApp::new(db).await;
+    sqlx::query(
+        "INSERT INTO mcp_clients (client_id, redirect_uris, source)
+         SELECT 'pending_' || i, '{}', 'seeded' FROM generate_series(1, 998) i",
+    )
+    .execute(&app.db)
+    .await
+    .unwrap();
+    let mut registrations = tokio::task::JoinSet::new();
+    for i in 1..=10 {
+        let router = app.router.clone();
+        let req = register_request(&format!("10.0.1.{i}:1"));
+        registrations.spawn(async move { router.oneshot(req).await.unwrap().status() });
+    }
+    let statuses = registrations.join_all().await;
+    let created = statuses
+        .iter()
+        .filter(|s| **s == StatusCode::CREATED)
+        .count();
+    assert_eq!(created, 2, "{statuses:?}");
+    assert_eq!(app.count("SELECT count(*) FROM mcp_clients").await, 1000);
 }

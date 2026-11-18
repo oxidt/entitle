@@ -668,7 +668,9 @@ Connect a client to `{ENTITLE_PUBLIC_URL}/mcp`:
 
 `/oauth/*` allows 30 requests per minute per client IP, then answers `429` with
 `Retry-After: 60` (see `ENTITLE_TRUST_PROXY`). Registration keeps at most 1000 clients
-that have no token yet; clients without a token are deleted after a day.
+that have no token yet, and at most 10 per client IP (IPv6: per /64); past either, it
+answers `503` with `{"error": "temporarily_unavailable"}`. Clients without a token are
+deleted after an hour, so finish the consent step within an hour of registering.
 
 ## Inbound store webhooks
 

@@ -32,14 +32,18 @@ use super::{READ_SCOPE, TOKEN_PREFIX, WRITE_SCOPE, token_hash};
 use crate::AppState;
 use crate::auth::is_admin_token;
 use crate::crypto::random_token;
-use crate::rate_limit::{self, RateLimit};
+use crate::rate_limit::{self, ClientSource, RateLimit};
 
 const CODE_TTL_SECONDS: i64 = 60;
 /// Registration is unauthenticated, so what it stores is bounded: per client, and by
-/// dropping clients that got no token within a day and capping the rest.
+/// dropping clients that got no token within an hour and capping the rest, overall
+/// and per source (client IP, IPv6 by /64).
 const MAX_REDIRECT_URIS: usize = 5;
 const MAX_REDIRECT_URI_LEN: usize = 512;
 const MAX_PENDING_CLIENTS: i64 = 1000;
+const MAX_PENDING_PER_SOURCE: i64 = 10;
+/// Advisory lock that serializes registrations, so the caps cannot be raced.
+const REGISTER_LOCK: i64 = 0x656e_7469_746c_6501;
 
 /// Requests per minute and client IP to `/oauth/*`; a connection takes four.
 const OAUTH_PER_MINUTE: u32 = 30;
@@ -129,7 +133,11 @@ async fn authorization_server(State(state): State<AppState>) -> Json<serde_json:
 
 // ---- registration ----
 
-async fn register(State(state): State<AppState>, Json(req): Json<register::Request>) -> Response {
+async fn register(
+    State(state): State<AppState>,
+    ClientSource(source): ClientSource,
+    Json(req): Json<register::Request>,
+) -> Response {
     let reg = match register::validate(req, &allowlist()) {
         Ok(reg) => reg,
         Err(e) => {
@@ -147,49 +155,70 @@ async fn register(State(state): State<AppState>, Json(req): Json<register::Reque
             "too many or too long redirect_uris",
         ));
     }
-    let pending: Result<(i64,), _> = sqlx::query_as(
-        "WITH stale AS (
-            DELETE FROM mcp_clients c
-            WHERE c.created_at < now() - interval '1 day'
-              AND NOT EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)
-         )
-         SELECT count(*) FROM mcp_clients c
-         WHERE c.created_at >= now() - interval '1 day'
-           AND NOT EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)",
-    )
-    .fetch_one(&state.db)
-    .await;
-    match pending {
-        Ok((n,)) if n >= MAX_PENDING_CLIENTS => {
-            return oauth_error(&OAuthError::temporarily_unavailable(
-                "too many pending registrations, try again later",
-            ));
-        }
-        Ok(_) => {}
-        Err(e) => return server_error(e),
-    }
     // Registrant-supplied and shown on the consent page.
     let name = reg
         .client_name
         .as_deref()
         .map(|n| n.chars().take(64).collect::<String>());
-    let client_id = random_token("client_");
-    let inserted = sqlx::query(
-        "INSERT INTO mcp_clients (client_id, client_name, redirect_uris) VALUES ($1, $2, $3)",
-    )
-    .bind(&client_id)
-    .bind(name)
-    .bind(&reg.redirect_uris)
-    .execute(&state.db)
-    .await;
-    if let Err(e) = inserted {
-        return server_error(e);
-    }
+    let client_id = match store_client(&state, &source.to_string(), name, &reg.redirect_uris).await
+    {
+        Ok(Some(client_id)) => client_id,
+        Ok(None) => {
+            return oauth_error(&OAuthError::temporarily_unavailable(
+                "too many pending registrations, try again later",
+            ));
+        }
+        Err(e) => return server_error(e),
+    };
     (
         StatusCode::CREATED,
         Json(register::response(&client_id, &reg, &scopes(), false)),
     )
         .into_response()
+}
+
+/// Stores a new client unless that would exceed the pending caps (`None`). Clients without
+/// a token are pending; those older than an hour are dropped first.
+async fn store_client(
+    state: &AppState,
+    source: &str,
+    name: Option<String>,
+    redirect_uris: &[String],
+) -> Result<Option<String>, sqlx::Error> {
+    let mut tx = state.db.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(REGISTER_LOCK)
+        .execute(&mut *tx)
+        .await?;
+    let (pending, from_source): (i64, i64) = sqlx::query_as(
+        "WITH stale AS (
+            DELETE FROM mcp_clients c
+            WHERE c.created_at < now() - interval '1 hour'
+              AND NOT EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)
+         )
+         SELECT count(*), count(*) FILTER (WHERE c.source = $1) FROM mcp_clients c
+         WHERE c.created_at >= now() - interval '1 hour'
+           AND NOT EXISTS (SELECT 1 FROM mcp_tokens t WHERE t.client_id = c.client_id)",
+    )
+    .bind(source)
+    .fetch_one(&mut *tx)
+    .await?;
+    if pending >= MAX_PENDING_CLIENTS || from_source >= MAX_PENDING_PER_SOURCE {
+        return Ok(None);
+    }
+    let client_id = random_token("client_");
+    sqlx::query(
+        "INSERT INTO mcp_clients (client_id, client_name, redirect_uris, source)
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(&client_id)
+    .bind(name)
+    .bind(redirect_uris)
+    .bind(source)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Some(client_id))
 }
 
 // ---- consent ----
