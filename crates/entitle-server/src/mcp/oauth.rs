@@ -358,42 +358,11 @@ async fn exchange(State(state): State<AppState>, Form(form): Form<token::Request
         }
         Err(e) => return oauth_error(&e),
     };
-    // Single use: deleting it is the claim.
-    let code: Option<(String, String, String, String, DateTime<Utc>)> = match sqlx::query_as(
-        "DELETE FROM mcp_codes WHERE code_hash = $1
-         RETURNING client_id, redirect_uri, code_challenge, scope, expires_at",
-    )
-    .bind(token_hash(&state, &grant.code))
-    .fetch_optional(&state.db)
-    .await
-    {
-        Ok(code) => code,
+    let (access_token, scope) = match redeem(&state, &grant).await {
+        Ok(Ok(issued)) => issued,
+        Ok(Err(e)) => return oauth_error(&e),
         Err(e) => return server_error(e),
     };
-    let Some((client_id, redirect_uri, code_challenge, scope, expires_at)) = code else {
-        return oauth_error(&OAuthError::invalid_grant("unknown or used code"));
-    };
-    let stored = StoredCode {
-        client_id,
-        redirect_uri,
-        code_challenge,
-        resource: Some(format!("{}/mcp", public_url(&state))),
-        expires_at: expires_at.timestamp(),
-    };
-    if let Err(e) = token::verify_code_exchange(&grant, &stored, Utc::now().timestamp()) {
-        return oauth_error(&e);
-    }
-    let access_token = random_token(TOKEN_PREFIX);
-    let inserted =
-        sqlx::query("INSERT INTO mcp_tokens (token_hash, client_id, scope) VALUES ($1, $2, $3)")
-            .bind(token_hash(&state, &access_token))
-            .bind(&stored.client_id)
-            .bind(&scope)
-            .execute(&state.db)
-            .await;
-    if let Err(e) = inserted {
-        return server_error(e);
-    }
     (
         [(header::CACHE_CONTROL, "no-store")],
         Json(json!({
@@ -403,6 +372,51 @@ async fn exchange(State(state): State<AppState>, Form(form): Form<token::Request
         })),
     )
         .into_response()
+}
+
+/// Validates the code, then consumes it and stores a new access token in one transaction.
+/// A failed check leaves the code usable: whoever sees a callback code but lacks its PKCE
+/// verifier cannot spoil the login. Returns the access token and its scope.
+async fn redeem(
+    state: &AppState,
+    grant: &token::AuthorizationCodeGrant,
+) -> Result<Result<(String, String), OAuthError>, sqlx::Error> {
+    let code_hash = token_hash(state, &grant.code);
+    let mut tx = state.db.begin().await?;
+    // Locked: a concurrent exchange of the same code waits, then finds it gone.
+    let code: Option<(String, String, String, String, DateTime<Utc>)> = sqlx::query_as(
+        "SELECT client_id, redirect_uri, code_challenge, scope, expires_at
+         FROM mcp_codes WHERE code_hash = $1 FOR UPDATE",
+    )
+    .bind(&code_hash)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((client_id, redirect_uri, code_challenge, scope, expires_at)) = code else {
+        return Ok(Err(OAuthError::invalid_grant("unknown or used code")));
+    };
+    let stored = StoredCode {
+        client_id,
+        redirect_uri,
+        code_challenge,
+        resource: Some(format!("{}/mcp", public_url(state))),
+        expires_at: expires_at.timestamp(),
+    };
+    if let Err(e) = token::verify_code_exchange(grant, &stored, Utc::now().timestamp()) {
+        return Ok(Err(e));
+    }
+    sqlx::query("DELETE FROM mcp_codes WHERE code_hash = $1")
+        .bind(&code_hash)
+        .execute(&mut *tx)
+        .await?;
+    let access_token = random_token(TOKEN_PREFIX);
+    sqlx::query("INSERT INTO mcp_tokens (token_hash, client_id, scope) VALUES ($1, $2, $3)")
+        .bind(token_hash(state, &access_token))
+        .bind(&stored.client_id)
+        .bind(&scope)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(Ok((access_token, scope)))
 }
 
 // ---- pages ----

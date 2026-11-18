@@ -547,3 +547,35 @@ async fn the_global_pending_cap_holds_under_concurrency(db: PgPool) {
     assert_eq!(created, 2, "{statuses:?}");
     assert_eq!(app.count("SELECT count(*) FROM mcp_clients").await, 1000);
 }
+
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn a_failed_exchange_leaves_the_code_usable(db: PgPool) {
+    let app = TestApp::new(db).await;
+    let (client_id, code) = authorize(&app, false).await;
+    let (status, response) = send(
+        &app,
+        form(
+            "/oauth/token",
+            &[
+                ("grant_type", "authorization_code"),
+                ("code", &code),
+                ("redirect_uri", CALLBACK),
+                ("client_id", &client_id),
+                (
+                    "code_verifier",
+                    "not-the-verifier-not-the-verifier-0123456789",
+                ),
+            ],
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_str(&text(response).await).unwrap();
+    assert_eq!(body["error"], "invalid_grant");
+    assert_eq!(app.count("SELECT count(*) FROM mcp_tokens").await, 0);
+
+    let (status, token) = exchange(&app, &client_id, &code).await;
+    assert_eq!(status, StatusCode::OK, "{token}");
+    let (status, _) = exchange(&app, &client_id, &code).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
