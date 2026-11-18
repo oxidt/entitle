@@ -5,7 +5,9 @@
 //! signed-in user (`sub` = app user id, `aud` = `entitle:<project id>`, `exp`)
 //! with the project's identity secret. Tokens are verified whenever sent and
 //! required once the project sets `require_signed_identity`. Anonymous ids need
-//! no proof: they are random and never returned to public keys.
+//! no proof: they are random and never returned to public keys. An anonymous id
+//! that has been logged in acts as an identified customer, though: once signed
+//! identity is required, it needs a token for one of that customer's identified ids.
 
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -69,14 +71,15 @@ impl<S: Send + Sync> FromRequestParts<S> for IdentityToken {
     }
 }
 
-/// Checks that the caller may act as `app_user_id`.
+/// Checks that the caller may act as `app_user_id`. Authorization follows the
+/// customer the id resolves to, not the form of the id.
 pub async fn authorize(
     state: &AppState,
     key: &ProjectKey,
     app_user_id: &str,
     token: Option<&str>,
 ) -> ApiResult<()> {
-    if key.kind == KeyKind::Secret || is_anonymous(app_user_id) {
+    if key.kind == KeyKind::Secret {
         return Ok(());
     }
     let (required, sealed): (bool, Option<Vec<u8>>) = sqlx::query_as(
@@ -85,6 +88,20 @@ pub async fn authorize(
     .bind(key.project_id.0)
     .fetch_one(&state.db)
     .await?;
+    // The ids a token's `sub` may name to act as `app_user_id`.
+    let subjects = if is_anonymous(app_user_id) {
+        if !required {
+            return Ok(());
+        }
+        let subjects = identified_aliases(state, key.project_id, app_user_id).await?;
+        if subjects.is_empty() {
+            // Still anonymous (or unknown): the random id is the proof.
+            return Ok(());
+        }
+        subjects
+    } else {
+        vec![app_user_id.to_owned()]
+    };
     let Some(token) = token else {
         return if required {
             Err(ApiError::Forbidden(format!(
@@ -102,11 +119,30 @@ pub async fn authorize(
     let secret = state.cipher.open(&sealed, &secret_aad(key.project_id))?;
     let secret = String::from_utf8(secret).map_err(anyhow::Error::from)?;
     match verify(&secret, key.project_id, token) {
-        Some(sub) if sub == app_user_id => Ok(()),
+        Some(sub) if subjects.contains(&sub) => Ok(()),
         _ => Err(ApiError::Forbidden(format!(
             "invalid identity token for `{app_user_id}`"
         ))),
     }
+}
+
+/// The non-anonymous app user ids of the customer `app_user_id` belongs to.
+async fn identified_aliases(
+    state: &AppState,
+    project: ProjectId,
+    app_user_id: &str,
+) -> ApiResult<Vec<String>> {
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT b.app_user_id FROM customer_aliases a
+         JOIN customer_aliases b ON b.customer_id = a.customer_id
+         WHERE a.project_id = $1 AND a.app_user_id = $2 AND NOT starts_with(b.app_user_id, $3)",
+    )
+    .bind(project.0)
+    .bind(app_user_id)
+    .bind(entitle_core::identity::ANONYMOUS_PREFIX)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
 #[cfg(test)]

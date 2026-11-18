@@ -150,8 +150,14 @@ signed with the project's identity secret (`POST /admin/v1/projects/{id}/identit
   another id). With the project's `require_signed_identity` on, identified ids
   **need** one (403 otherwise).
 - Not needed: anonymous `$entitle_anon:` ids (random and never returned to public
-  keys) and secret-key calls.
+  keys) and secret-key calls. Exception: with `require_signed_identity` on, an
+  anonymous id that has been logged in (an alias of an identified customer) needs a
+  token whose `sub` is one of that customer's identified ids (403 otherwise). The
+  SDK switches to the identified id after `logIn`, so this only affects stale ids.
 - Rotating the secret invalidates all tokens signed with the old one.
+- `require_signed_identity` is off by default, which keeps apps without a backend
+  working. If your users sign in with a backend, **turn it on**: without it, anyone
+  who knows or guesses an identified app user id can read its state and act as it.
 
 ### `GET /v1/customers/{app_user_id}`
 

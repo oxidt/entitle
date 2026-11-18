@@ -189,3 +189,50 @@ async fn required_identity_guards_identified_ids_and_both_sides_of_login(db: PgP
     .await;
     assert_eq!(s, StatusCode::FORBIDDEN);
 }
+
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn an_old_anonymous_id_of_an_identified_customer_needs_a_token(db: PgPool) {
+    let app = TestApp::new(db).await;
+    let secret = identity_secret(&app).await;
+    let alice = token(&app, &secret, "alice");
+    let bob = token(&app, &secret, "bob");
+    // Logged in while signed identity was still optional.
+    let anon = format!("/customers/{ANON}");
+    let (s, anon_info) = call(&app, Method::GET, &anon, None, None).await;
+    assert_eq!(s, StatusCode::OK);
+    let (s, _) = call(
+        &app,
+        Method::POST,
+        &format!("/customers/{ANON}/login"),
+        None,
+        Some(json!({ "new_app_user_id": "alice" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(require(&app, true).await, StatusCode::OK);
+    assert_eq!(
+        app.customer_secret("alice").await["customer_id"],
+        anon_info["customer_id"]
+    );
+
+    let (s, body) = call(&app, Method::GET, &anon, None, None).await;
+    assert_eq!(s, StatusCode::FORBIDDEN, "{body}");
+    let (s, _) = call(&app, Method::GET, &anon, Some(&bob), None).await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, _) = call(
+        &app,
+        Method::POST,
+        &format!("{anon}/sync"),
+        None,
+        Some(json!({ "store": "app_store", "id": "1000" })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
+    let (s, body) = call(&app, Method::GET, &anon, Some(&alice), None).await;
+    assert_eq!(s, StatusCode::OK, "{body}");
+
+    // A fresh anonymous id still needs nothing.
+    let fresh = "/customers/$entitle_anon:00000000-0000-4000-8000-000000000001";
+    let (s, _) = call(&app, Method::GET, fresh, None, None).await;
+    assert_eq!(s, StatusCode::OK);
+}
