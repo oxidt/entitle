@@ -126,7 +126,8 @@ Returned by most `/v1` endpoints.
   `grace_period_expires_at` (else `expires_at`); `billing_retry`, `paused`,
   `expired`, `refunded`, `revoked` grant nothing.
 - One-time purchases grant forever unless refunded/revoked.
-- Sandbox purchases grant nothing when the project's `sandbox_grants_entitlements` is off.
+- Sandbox purchases grant nothing unless the project's `sandbox_grants_entitlements` is on
+  (off by default).
 - Several sources for one entitlement: the latest expiry wins (lifetime beats any
   date). Entitlements are computed at request time, so expiry needs no job.
 
@@ -311,7 +312,7 @@ longer resolves).
 - `POST /admin/v1/projects` `{"name": "My App"}` → `201` `Project`
   `{"id", "name", "checkout_redirect_origins": [], "reporting_currency": "USD",
   "require_signed_identity": false, "has_identity_secret": false,
-  "sandbox_grants_entitlements": true, "created_at"}`
+  "sandbox_grants_entitlements": false, "created_at"}`
 - `GET /admin/v1/projects` → `[Project]`
 - `GET /admin/v1/projects/{project_id}` → `Project`
 - `PATCH /admin/v1/projects/{project_id}`
@@ -326,11 +327,12 @@ longer resolves).
   - `require_signed_identity`: public-key calls for identified app user ids need a
     signed identity token (see [Signed identity](#signed-identity)). Enabling it
     without an identity secret → 400.
-  - `sandbox_grants_entitlements` (default `true`): whether sandbox purchases
+  - `sandbox_grants_entitlements` (default `false`): whether sandbox purchases
     (TestFlight, Play license testers, Creem test mode) grant entitlements. Turn it
-    **off for production projects**: sandbox purchases are free, so anyone with a
-    tester build could otherwise unlock the production app. They are still recorded
-    and listed in `purchases`.
+    **on for test projects only**: sandbox purchases are free, so in a production
+    project anyone with a tester build could unlock the app. Either way they are
+    recorded and listed in `purchases`. Projects created before this default changed
+    keep the value they had (then `true`); check production projects and turn it off.
 - `POST /admin/v1/projects/{project_id}/identity-secret` → `201` `{"identity_secret": "ids_…"}`.
   Creates or replaces the secret your backend signs identity tokens with; shown once.
 - `DELETE /admin/v1/projects/{project_id}` → `204` (deletes everything in it)

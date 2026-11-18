@@ -9,7 +9,7 @@ use serde_json::json;
 use sqlx::PgPool;
 
 #[sqlx::test(migrator = "entitle_server::MIGRATOR")]
-async fn sandbox_purchases_grant_nothing_when_switched_off(db: PgPool) {
+async fn sandbox_purchases_grant_only_when_switched_on(db: PgPool) {
     let app = TestApp::new(db).await;
     let alice = app.customer("alice").await;
     let now = Utc::now();
@@ -24,21 +24,37 @@ async fn sandbox_purchases_grant_nothing_when_switched_off(db: PgPool) {
         alice["customer_id"].as_str().unwrap().parse().unwrap(),
     ));
     assert_eq!(app.notify("apple", "e1", vec![s]).await, StatusCode::OK);
-    // Default: sandbox counts (development projects).
-    assert!(app.customer("alice").await["entitlements"]["pro"].is_object());
-
-    let (s, project) = app
+    // Default for a new project: production only. Still recorded, just not granting.
+    let (_, project) = app
         .admin(
-            Method::PATCH,
+            Method::GET,
             &format!("/admin/v1/projects/{}", app.project),
-            json!({ "sandbox_grants_entitlements": false }),
+            json!(null),
         )
         .await;
-    assert_eq!(s, StatusCode::OK);
     assert_eq!(project["sandbox_grants_entitlements"], false);
-
     let info = app.customer("alice").await;
     assert_eq!(info["entitlements"], json!({}));
-    // Still recorded, just not granting.
     assert_eq!(info["purchases"][0]["environment"], "sandbox");
+
+    // A test project opts in.
+    let patch = |on: bool| {
+        let app = &app;
+        async move {
+            app.admin(
+                Method::PATCH,
+                &format!("/admin/v1/projects/{}", app.project),
+                json!({ "sandbox_grants_entitlements": on }),
+            )
+            .await
+        }
+    };
+    let (s, project) = patch(true).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(project["sandbox_grants_entitlements"], true);
+    assert!(app.customer("alice").await["entitlements"]["pro"].is_object());
+
+    let (s, _) = patch(false).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(app.customer("alice").await["entitlements"], json!({}));
 }

@@ -27,7 +27,10 @@ Do this either in the dashboard or with the CLI. Both call the same admin API.
    Open it via the public URL: the notification URLs it shows are built from it.
 2. Create the project (the form shown when there is none, or **+ New project…** in the header's
    project picker), then open the **Setup** tab.
-3. **Project**: copy the **Project id**.
+3. **Project**: copy the **Project id**. Turn on **Sandbox purchases grant entitlements** and
+   save: new projects grant from production purchases only, so without it the sandbox purchase
+   at the end of this guide is recorded but unlocks nothing. Use a separate project for
+   testing, or turn it off again before release.
 4. **API keys**: **New public key**. Copy the `pk_…` key now; it is not shown again.
 5. **Products & entitlements**:
    1. Add entitlement: identifier `full_game`.
@@ -48,6 +51,9 @@ Do this either in the dashboard or with the CLI. Both call the same admin API.
 export ENTITLE_URL=https://entitle.example.com
 entitle admin projects create "Quest"
 entitle admin projects list                               # the project id
+# Test project: let sandbox purchases grant (new projects default to production only).
+curl -X PATCH -H "Authorization: Bearer $ENTITLE_ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"sandbox_grants_entitlements": true}' "$ENTITLE_URL/admin/v1/projects/<project_id>"
 entitle admin keys create "Quest"                         # pk_… printed once
 entitle admin entitlements create "Quest" full_game
 entitle admin products create "Quest" quest.example.full --store app_store
@@ -185,6 +191,9 @@ notification URLs below.
   sync fails, and the transaction stays unfinished: StoreKit delivers it again at every launch and
   `startPurchaseSync` retries it, failing each time. Use it only to test the native purchase UI;
   use a sandbox account or TestFlight for anything that involves entitle.
+- **A sandbox purchase is recorded but unlocks nothing.** The project's
+  `sandbox_grants_entitlements` is off, the default for projects created since it changed
+  (older projects keep theirs). Turn it on for a test project (step 1).
 - **Sandbox purchases never appear in the revenue charts.** Revenue metrics count production
   purchases only. Use the Purchase activity panel with **Sandbox** selected.
 - **Google refunds unacknowledged purchases after 3 days.** entitle acknowledges a Play purchase

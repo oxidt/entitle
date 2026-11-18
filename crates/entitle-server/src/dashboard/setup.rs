@@ -412,6 +412,19 @@ async fn project_settings(cx: &Cx, project: &Project, flash: &Option<Flash>) -> 
                         (origins)
                     </textarea>
                 )
+                <label class="switch">
+                    <input
+                        class="toggle toggle-sm"
+                        type="checkbox"
+                        name="sandbox_grants"
+                        value="1"
+                        checked=(project.sandbox_grants_entitlements)
+                    >
+                    "Sandbox purchases grant entitlements"
+                </label>
+                <p class="hint">
+                    "Turn on for test projects only. Sandbox purchases (TestFlight, license testers, Creem test mode) are free, so in a production project anyone with a tester build could unlock the app. They are recorded either way."
+                </p>
                 error_text(error: flash_error(flash, "project"))
                 <div class="row">
                     <button type="submit" class="btn btn-primary btn-sm">"Save"</button>
@@ -1480,7 +1493,11 @@ async fn setup_action(cx: &Cx, Form(f): Form<Fields>) -> Result<SeeOther> {
                 .map(str::trim)
                 .filter(|o| !o.is_empty())
                 .collect();
-            let body = json!({ "reporting_currency": get(&f, "currency"), "checkout_redirect_origins": origins });
+            let body = json!({
+                "reporting_currency": get(&f, "currency"),
+                "checkout_redirect_origins": origins,
+                "sandbox_grants_entitlements": f.contains_key("sandbox_grants"),
+            });
             let r = call::<Value>(state, Method::PATCH, &base, Some(body)).await;
             ("project", "setup-project", r.map(|_| None))
         }
