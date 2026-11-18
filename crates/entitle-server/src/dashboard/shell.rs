@@ -2,8 +2,8 @@
 
 use topcoat::{
     Result,
-    asset::{Asset, AssetConfig, asset},
-    context::{Cx, app_context},
+    asset::{Asset, asset, asset_config},
+    context::{Cx, context},
     router::query_params,
     view::{Child, View, component, view},
 };
@@ -24,13 +24,13 @@ const CHART_JS: Asset = asset!("assets/dashboard/chart.js");
 const FAVICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23c14d34'/%3E%3Cg transform='rotate(-14 20 20)'%3E%3Cmask id='m'%3E%3Crect width='40' height='40' fill='%23fff'/%3E%3Ccircle cx='7' cy='20' r='3.4'/%3E%3Ccircle cx='33' cy='20' r='3.4'/%3E%3C/mask%3E%3Crect x='7' y='11.5' width='26' height='17' rx='3' fill='%23fff9ee' mask='url(%23m)'/%3E%3Cg fill='%23c14d34'%3E%3Ccircle cx='25' cy='14.75' r='1.15'/%3E%3Ccircle cx='25' cy='18.25' r='1.15'/%3E%3Ccircle cx='25' cy='21.75' r='1.15'/%3E%3Ccircle cx='25' cy='25.25' r='1.15'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E";
 
 pub fn state(cx: &Cx) -> &AppState {
-    app_context::<AppState>(cx)
+    context::<AppState>(cx)
 }
 
 /// The HTML document: head, styles and scripts.
 #[component]
 pub async fn document(cx: &Cx, title: &str, #[default] child: Child<'_>) -> Result<impl View> {
-    let mark = app_context::<AssetConfig>(cx).resolve(MARK);
+    let mark = asset_config(cx).resolve(cx, MARK);
     Ok(view! {
         <!DOCTYPE html>
         <html lang="en" style=(format!("--brand-mark: url({mark})"))>
@@ -118,6 +118,7 @@ pub fn href(path: &str, project: &Project) -> String {
 /// Sidebar, page header and content.
 #[component]
 pub async fn app(
+    cx: &Cx,
     projects: &Projects,
     section: Section,
     #[default] child: Child<'_>,
@@ -221,7 +222,7 @@ pub async fn app(
 }
 
 #[component]
-async fn icon(section: Section) -> Result<impl View> {
+async fn icon(cx: &Cx, section: Section) -> Result<impl View> {
     Ok(view! {
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             match section {

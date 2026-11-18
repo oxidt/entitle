@@ -339,7 +339,7 @@ async fn customer_list_section(cx: &Cx, project: &Project, filter: Filter) -> Re
 }
 
 #[component]
-async fn customer_row(project: &Project, c: &CustomerListItem) -> Result<impl View> {
+async fn customer_row(cx: &Cx, project: &Project, c: &CustomerListItem) -> Result<impl View> {
     let stores = c
         .stores
         .iter()
@@ -630,6 +630,7 @@ async fn customer_view(
 
 #[component]
 async fn entitlement_row(
+    cx: &Cx,
     project: &Project,
     app_user_id: &str,
     e: &ActiveEntitlement,

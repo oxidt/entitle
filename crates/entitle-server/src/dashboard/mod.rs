@@ -20,9 +20,9 @@ use axum::response::{IntoResponse, Redirect};
 use axum::routing::get;
 use sha2::{Digest, Sha512};
 use topcoat::asset::{AssetBundle, RouterBuilderAssetExt};
-use topcoat::cookie::{Key, RouterBuilderCookieExt};
+use topcoat::cookie::{CookieLayer, Key};
 use topcoat::router::{Router as PageRouter, tower::TowerService};
-use topcoat::runtime::RouterBuilderRuntimeExt;
+use topcoat::runtime::RuntimeLayer;
 
 use crate::AppState;
 
@@ -67,10 +67,10 @@ fn pages(state: AppState, bundle: AssetBundle) -> PageRouter {
     let builder = setup::register(customers::register(revenue::register(builder)));
     session::register(builder)
         .assets(bundle)
-        .app_context(state)
-        .app_context(key)
-        .cookies()
-        .runtime()
+        .with(state)
+        .with(key)
+        .layer(CookieLayer::new())
+        .layer(RuntimeLayer::new())
         .build()
 }
 

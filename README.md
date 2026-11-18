@@ -93,7 +93,7 @@ The dashboard is server-rendered with [Topcoat](https://github.com/tokio-rs/topc
 to the binary; without them `/dashboard/` shows a build hint.
 
 ```sh
-cargo install topcoat-cli --version 0.11.0 --locked
+cargo install topcoat-cli --version 0.12.1 --locked
 cargo build --bin entitle && topcoat asset bundle --package entitle-server
 topcoat fmt --rustfmt crates/entitle-server/src/dashboard   # formats view! markup too
 ```

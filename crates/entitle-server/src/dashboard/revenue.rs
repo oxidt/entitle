@@ -469,7 +469,7 @@ async fn revenue(cx: &Cx) -> Result<impl View> {
 }
 
 #[component]
-async fn delta(value: Option<f64>, pp: bool, good_when_up: bool) -> Result<impl View> {
+async fn delta(cx: &Cx, value: Option<f64>, pp: bool, good_when_up: bool) -> Result<impl View> {
     let value = value.filter(|v| v.is_finite());
     Ok(view! {
         match value {
@@ -505,7 +505,7 @@ async fn delta(value: Option<f64>, pp: bool, good_when_up: bool) -> Result<impl 
 }
 
 #[component]
-async fn tile(label: &str, value: String, sub: Option<&str>) -> Result<impl View> {
+async fn tile(cx: &Cx, label: &str, value: String, sub: Option<&str>) -> Result<impl View> {
     Ok(view! {
         <div class="tile card-elevated bg-base-100">
             <div class="tile-label">(label)</div>
@@ -645,7 +645,7 @@ async fn charts(cx: &Cx, project: &Project, view: Params) -> Result<impl View> {
 }
 
 #[component]
-async fn notices(m: &Metrics, from: NaiveDate) -> Result<impl View> {
+async fn notices(cx: &Cx, m: &Metrics, from: NaiveDate) -> Result<impl View> {
     let history_start = m
         .history_start
         .map(|t| t.date_naive())
@@ -718,7 +718,7 @@ impl<'a> LegendItem<'a> {
 }
 
 #[component]
-async fn legend(items: Vec<LegendItem<'_>>) -> Result<impl View> {
+async fn legend(cx: &Cx, items: Vec<LegendItem<'_>>) -> Result<impl View> {
     Ok(view! {
         <div class="legend">
             for it in items {
@@ -746,7 +746,11 @@ async fn legend(items: Vec<LegendItem<'_>>) -> Result<impl View> {
 }
 
 #[component]
-async fn data_table(labels: Vec<String>, columns: Vec<(&str, Vec<String>)>) -> Result<impl View> {
+async fn data_table(
+    cx: &Cx,
+    labels: Vec<String>,
+    columns: Vec<(&str, Vec<String>)>,
+) -> Result<impl View> {
     Ok(view! {
         <details class="table-view">
             <summary>"Show data table"</summary>
@@ -778,6 +782,7 @@ async fn data_table(labels: Vec<String>, columns: Vec<(&str, Vec<String>)>) -> R
 
 #[component]
 async fn kpi(
+    cx: &Cx,
     label: &str,
     value: String,
     delta_value: Option<f64>,
@@ -798,7 +803,7 @@ async fn kpi(
 }
 
 #[component]
-async fn chart_cards(cur: &Metrics, prev: &Metrics, compare: bool) -> Result<impl View> {
+async fn chart_cards(cx: &Cx, cur: &Metrics, prev: &Metrics, compare: bool) -> Result<impl View> {
     let today = Utc::now().date_naive();
     let ccy = cur.currency.as_str();
     let pts = cur.points.as_slice();
@@ -1202,7 +1207,7 @@ async fn activity_feed(cx: &Cx, project: &Project, env: Environment) -> Result<i
 }
 
 #[component]
-async fn activity_row(project: &Project, r: &ActivityOut) -> Result<impl View> {
+async fn activity_row(cx: &Cx, project: &Project, r: &ActivityOut) -> Result<impl View> {
     Ok(view! {
         <tr>
             <td>local_time(at: r.recorded_at, format: "activity")</td>

@@ -277,7 +277,7 @@ async fn checklist(cx: &Cx, project: &Project) -> Result<impl View> {
 
 /// The hidden fields every action form carries.
 #[component]
-async fn action_fields(project: &Project, action: &str) -> Result<impl View> {
+async fn action_fields(cx: &Cx, project: &Project, action: &str) -> Result<impl View> {
     Ok(view! {
         <input type="hidden" name="project" value=(project.id.to_string())>
         <input type="hidden" name="action" value=(action)>
@@ -288,6 +288,7 @@ async fn action_fields(project: &Project, action: &str) -> Result<impl View> {
 /// With a `glyph` the first button shows only that icon (table rows).
 #[component]
 async fn confirm_button(
+    cx: &Cx,
     project: &Project,
     label: &str,
     glyph: Option<Glyph>,
@@ -338,7 +339,7 @@ async fn confirm_button(
 }
 
 #[component]
-async fn one_time_secret(label: &str, value: &str) -> Result<impl View> {
+async fn one_time_secret(cx: &Cx, label: &str, value: &str) -> Result<impl View> {
     Ok(view! {
         <div
             class="notice alert alert-soft alert-warning secret"
@@ -683,6 +684,7 @@ async fn catalog(cx: &Cx, project: &Project, flash: &Option<Flash>) -> Result<im
 
 #[component]
 async fn entitlement_row(
+    cx: &Cx,
     project: &Project,
     ent: &Entitlement,
     products: &[Product],
@@ -817,6 +819,7 @@ async fn stores(cx: &Cx, project: &Project, flash: &Option<Flash>) -> Result<imp
 
 #[component]
 async fn store_block(
+    cx: &Cx,
     project: &Project,
     store: &str,
     url: String,
@@ -908,7 +911,7 @@ async fn store_block(
 }
 
 #[component]
-async fn form_buttons() -> Result<impl View> {
+async fn form_buttons(cx: &Cx) -> Result<impl View> {
     Ok(view! {
         <div class="row">
             <button type="submit" class="btn btn-primary btn-sm">"Save"</button>
@@ -920,7 +923,7 @@ async fn form_buttons() -> Result<impl View> {
 }
 
 #[component]
-async fn apple_form(project: &Project) -> Result<impl View> {
+async fn apple_form(cx: &Cx, project: &Project) -> Result<impl View> {
     Ok(view! {
         <form class="store-form" method="post" action="/dashboard/setup/action">
             action_fields(project: project, action: "set_credentials")
@@ -998,7 +1001,7 @@ async fn apple_form(project: &Project) -> Result<impl View> {
 }
 
 #[component]
-async fn google_form(project: &Project, url: &str) -> Result<impl View> {
+async fn google_form(cx: &Cx, project: &Project, url: &str) -> Result<impl View> {
     Ok(view! {
         <form class="store-form" method="post" action="/dashboard/setup/action">
             action_fields(project: project, action: "set_credentials")
@@ -1062,7 +1065,7 @@ async fn google_form(project: &Project, url: &str) -> Result<impl View> {
 }
 
 #[component]
-async fn creem_form(project: &Project) -> Result<impl View> {
+async fn creem_form(cx: &Cx, project: &Project) -> Result<impl View> {
     Ok(view! {
         <form class="store-form" method="post" action="/dashboard/setup/action">
             action_fields(project: project, action: "set_credentials")
@@ -1265,7 +1268,7 @@ async fn delivery_list(
 }
 
 #[component]
-async fn delivery_row(project: &Project, d: &Delivery) -> Result<impl View> {
+async fn delivery_row(cx: &Cx, project: &Project, d: &Delivery) -> Result<impl View> {
     let tone = match d.status.as_str() {
         "delivered" => "badge badge-sm badge-soft badge-success",
         "failed" => "badge badge-sm badge-soft badge-error",
@@ -1319,7 +1322,7 @@ async fn delivery_row(project: &Project, d: &Delivery) -> Result<impl View> {
 }
 
 #[component]
-async fn danger_zone(project: &Project, flash: &Option<Flash>) -> Result<impl View> {
+async fn danger_zone(cx: &Cx, project: &Project, flash: &Option<Flash>) -> Result<impl View> {
     Ok(view! {
         section(
             id: Some("setup-delete"),
@@ -1354,7 +1357,11 @@ async fn danger_zone(project: &Project, flash: &Option<Flash>) -> Result<impl Vi
 
 /// Creates a project; also shown when there are none yet.
 #[component]
-pub async fn new_project_form(cancel: Option<String>, error: Option<&str>) -> Result<impl View> {
+pub async fn new_project_form(
+    cx: &Cx,
+    cancel: Option<String>,
+    error: Option<&str>,
+) -> Result<impl View> {
     Ok(view! {
         <form
             class="card card-elevated bg-base-100 new-project"

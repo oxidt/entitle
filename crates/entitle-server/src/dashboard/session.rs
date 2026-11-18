@@ -5,7 +5,7 @@ use chrono::Utc;
 use serde::Deserialize;
 use topcoat::{
     Result,
-    context::{Cx, app_context},
+    context::{Cx, context},
     cookie::{Cookie, Cookies, SameSite, signed_cookies},
     router::{
         Body, Layer, LayerFuture, Next, Path, RouterBuilder,
@@ -36,7 +36,7 @@ pub fn register(builder: RouterBuilder) -> RouterBuilder {
 }
 
 fn state(cx: &Cx) -> &AppState {
-    app_context::<AppState>(cx)
+    context::<AppState>(cx)
 }
 
 /// Whether the request carries an unexpired session cookie.

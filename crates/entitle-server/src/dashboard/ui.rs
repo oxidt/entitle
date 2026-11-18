@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 use topcoat::{
     Result,
+    context::Cx,
     view::{Child, View, component, view},
 };
 
@@ -11,6 +12,7 @@ use super::format::utc_text;
 /// A card with a title and an optional intro line.
 #[component]
 pub async fn section(
+    cx: &Cx,
     id: Option<&str>,
     title: &str,
     intro: Option<&str>,
@@ -38,6 +40,7 @@ pub async fn section(
 /// A labelled form control, with an optional hint below it.
 #[component]
 pub async fn field(
+    cx: &Cx,
     label: &str,
     hint: Option<&str>,
     #[default] child: Child<'_>,
@@ -54,7 +57,7 @@ pub async fn field(
 }
 
 #[component]
-pub async fn error_text(error: Option<&str>) -> Result<impl View> {
+pub async fn error_text(cx: &Cx, error: Option<&str>) -> Result<impl View> {
     Ok(view! {
         if let Some(error) = error {
             <p class="error" role="alert">(error)</p>
@@ -64,7 +67,7 @@ pub async fn error_text(error: Option<&str>) -> Result<impl View> {
 
 /// A value with a copy button, e.g. an id or a URL to paste into a store console.
 #[component]
-pub async fn copy_value(value: &str) -> Result<impl View> {
+pub async fn copy_value(cx: &Cx, value: &str) -> Result<impl View> {
     Ok(view! {
         <span class="copy-value">
             <code>(value)</code>
@@ -94,7 +97,7 @@ pub enum Glyph {
 }
 
 #[component]
-pub async fn glyph(kind: Glyph) -> Result<impl View> {
+pub async fn glyph(cx: &Cx, kind: Glyph) -> Result<impl View> {
     Ok(view! {
         <svg
             class="icon"
@@ -133,14 +136,14 @@ pub async fn glyph(kind: Glyph) -> Result<impl View> {
 
 /// An instant in the viewer's time zone (`format`: a `LOCAL_FORMATS` key in dashboard.js).
 #[component]
-pub async fn local_time(at: DateTime<Utc>, format: &str) -> Result<impl View> {
+pub async fn local_time(cx: &Cx, at: DateTime<Utc>, format: &str) -> Result<impl View> {
     Ok(view! {
         <time data-local=(format) datetime=(at.to_rfc3339())>(utc_text(at))</time>
     })
 }
 
 #[component]
-pub async fn status_badge(status: &str) -> Result<impl View> {
+pub async fn status_badge(cx: &Cx, status: &str) -> Result<impl View> {
     let tone = match status {
         "active" | "trial" => "badge-success",
         "grace_period" | "billing_retry" | "refunded" | "revoked" => "badge-error",
