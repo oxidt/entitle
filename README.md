@@ -38,7 +38,15 @@ export ENTITLE_ENCRYPTION_KEY=$(openssl rand -base64 32)
 cargo run --bin entitle                  # listens on ENTITLE_BIND (default 0.0.0.0:8080)
 ```
 
-Or everything in Docker: `docker compose --profile app up --build`.
+Or everything in Docker (the same two secrets are required; keep them, the key decrypts stored credentials):
+
+```sh
+export ENTITLE_ADMIN_TOKEN=$(openssl rand -hex 32)
+export ENTITLE_ENCRYPTION_KEY=$(openssl rand -base64 32)
+docker compose --profile app up --build
+```
+
+The compose Postgres password is a dev default; change it before exposing the database.
 Prebuilt images: `ghcr.io/oxidt/entitle:latest` (every commit on `main` is also tagged with its sha).
 
 | Variable | Required | Meaning |

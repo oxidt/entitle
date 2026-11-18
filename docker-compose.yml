@@ -17,7 +17,9 @@ services:
       timeout: 3s
       retries: 30
 
-  # Full stack: `docker compose --profile app up --build`
+  # Full stack: export ENTITLE_ADMIN_TOKEN and ENTITLE_ENCRYPTION_KEY (see README), then
+  # `docker compose --profile app up --build`. Both are passed through from your shell, never
+  # defaulted; entitle refuses to start without them. The Postgres credentials above are dev-only.
   entitle:
     profiles: ["app"]
     build: .
@@ -25,10 +27,10 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://entitle:entitle@postgres:5432/entitle
-      ENTITLE_ADMIN_TOKEN: dev-admin-token-change-me-0123456789abcdef
-      ENTITLE_ENCRYPTION_KEY: ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=
-      RUST_LOG: info
+      - DATABASE_URL=postgres://entitle:entitle@postgres:5432/entitle
+      - ENTITLE_ADMIN_TOKEN
+      - ENTITLE_ENCRYPTION_KEY
+      - RUST_LOG=info
     ports:
       - "127.0.0.1:8080:8080"
 
