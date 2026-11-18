@@ -2,7 +2,7 @@
 # Build: docker build -t entitle .
 FROM rust:1.99-trixie AS build
 # Bundles the dashboard's assets (crates/entitle-server/assets) next to the binary.
-RUN cargo install topcoat-cli --version 0.11.0 --locked
+RUN cargo install topcoat-cli --version 0.12.1 --locked
 WORKDIR /src
 COPY . .
 # Served at /version so a deploy can be checked against a commit.
