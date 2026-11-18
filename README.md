@@ -53,7 +53,7 @@ Prebuilt images: `ghcr.io/oxidt/entitle:latest` (every commit on `main` is also 
 |---|---|---|
 | `DATABASE_URL` | yes | Postgres URL; migrations run on startup |
 | `ENTITLE_ADMIN_TOKEN` | yes | bearer token for `/admin/v1`, min. 32 chars |
-| `ENTITLE_ENCRYPTION_KEY` | yes | base64 of 32 bytes; encrypts store credentials and webhook secrets. Losing it makes them unreadable. |
+| `ENTITLE_ENCRYPTION_KEY` | yes | base64 of 32 bytes; encrypts store credentials, webhook signing secrets and identity secrets. Losing it makes them unreadable; to change it, see "Rotating the encryption key". |
 | `ENTITLE_BIND` | no | listen address, default `0.0.0.0:8080` |
 | `ENTITLE_WEBHOOK_ALLOW_PRIVATE` | no | `true` lets outgoing webhooks target any http(s) host, incl. the private network (`http://backend:8080`). Default: public https hosts only. |
 | `ENTITLE_PUBLIC_URL` | no | public origin, e.g. `https://entitle.example.com`; enables the MCP endpoint `/mcp` and its OAuth server (see `docs/api.md`); an `https` origin also marks the dashboard cookies `Secure` |
@@ -62,6 +62,39 @@ Prebuilt images: `ghcr.io/oxidt/entitle:latest` (every commit on `main` is also 
 | `ENTITLE_SDK_RATE_PER_PROJECT` | no | the same per project, default `6000` |
 | `RUST_LOG` | no | log filter, default `info`. Request spans (`debug`) record the method, route template and status, never the raw path: `/v1` paths carry app user ids, and anonymous ids act as credentials. Keep them out of your reverse proxy's access logs too. |
 | `ENTITLE_LOG_FORMAT` | no | `json` for JSON logs |
+
+### Rotating the encryption key
+
+`entitle rotate-encryption-key` re-encrypts every secret at rest (store credentials, webhook
+signing secrets, identity secrets) from `ENTITLE_ENCRYPTION_KEY` to `ENTITLE_NEW_ENCRYPTION_KEY`
+in one database transaction. Every value is checked to decrypt with the new key before the
+commit; if anything fails (e.g. a value that the old key cannot decrypt), nothing changes.
+Stop entitle first, then start it with the new key. It needs `DATABASE_URL` and runs
+pending migrations.
+
+```sh
+export ENTITLE_NEW_ENCRYPTION_KEY=$(openssl rand -base64 32)
+entitle rotate-encryption-key            # old key from ENTITLE_ENCRYPTION_KEY
+export ENTITLE_ENCRYPTION_KEY=$ENTITLE_NEW_ENCRYPTION_KEY
+```
+
+**Upgrading from the old `docker-compose.yml`** (before 0.1.0 it set a fixed, published key,
+`ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE=`, and a fixed admin token): rotate both.
+
+```sh
+docker compose --profile app stop entitle
+export ENTITLE_ADMIN_TOKEN=$(openssl rand -hex 32)
+export ENTITLE_NEW_ENCRYPTION_KEY=$(openssl rand -base64 32)
+docker compose --profile app run --rm \
+  -e ENTITLE_ENCRYPTION_KEY=ZGV2LW9ubHktZW5jcnlwdGlvbi1rZXktMzJieXRlcyE= \
+  -e ENTITLE_NEW_ENCRYPTION_KEY entitle rotate-encryption-key
+export ENTITLE_ENCRYPTION_KEY=$ENTITLE_NEW_ENCRYPTION_KEY   # keep both secrets somewhere safe
+docker compose --profile app up -d
+```
+
+A new key protects the database from now on. Copies made with the old key (backups, dumps)
+stay readable with it: if one may have leaked, also replace the store credentials and webhook
+secrets.
 
 ## First project
 

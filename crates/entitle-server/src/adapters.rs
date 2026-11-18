@@ -147,7 +147,7 @@ fn check_store(store: Store, snapshots: &[PurchaseSnapshot]) -> ApiResult<()> {
     }
 }
 
-fn aad(project: ProjectId, store: Store) -> Vec<u8> {
+pub fn credentials_aad(project: ProjectId, store: Store) -> Vec<u8> {
     format!("store_credentials:{project}:{store}").into_bytes()
 }
 
@@ -169,7 +169,7 @@ pub async fn save_credentials(
         Store::AppStore => typed::<AppleCredentials>(json)?,
         Store::PlayStore => typed::<GoogleCredentials>(json)?,
     };
-    let sealed = cipher.seal(&plaintext, &aad(project, store));
+    let sealed = cipher.seal(&plaintext, &credentials_aad(project, store));
     sqlx::query(
         "INSERT INTO store_credentials (project_id, store, sealed) VALUES ($1, $2, $3)
          ON CONFLICT (project_id, store) DO UPDATE SET sealed = EXCLUDED.sealed, updated_at = now()",
@@ -199,6 +199,6 @@ pub async fn load_credentials<T: DeserializeOwned>(
             "{store} is not configured for this project"
         )));
     };
-    let plaintext = cipher.open(&sealed, &aad(project, store))?;
+    let plaintext = cipher.open(&sealed, &credentials_aad(project, store))?;
     Ok(serde_json::from_slice(&plaintext).map_err(anyhow::Error::from)?)
 }

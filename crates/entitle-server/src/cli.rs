@@ -29,6 +29,29 @@ pub enum Command {
     Serve,
     /// Manage projects, API keys, products, entitlements and store credentials.
     Admin(AdminArgs),
+    /// Re-encrypt all secrets at rest with a new encryption key, in one transaction.
+    /// Stop the server first; start it again with the new key.
+    RotateEncryptionKey(RotateArgs),
+}
+
+#[derive(Args)]
+pub struct RotateArgs {
+    #[arg(long, env = "DATABASE_URL", hide_env_values = true)]
+    pub database_url: String,
+    /// The current key. Prefer the environment variable: flags end up in shell history.
+    #[arg(
+        long = "old-key",
+        env = "ENTITLE_ENCRYPTION_KEY",
+        hide_env_values = true
+    )]
+    pub old_key: String,
+    /// The new key, base64 of 32 bytes (`openssl rand -base64 32`).
+    #[arg(
+        long = "new-key",
+        env = "ENTITLE_NEW_ENCRYPTION_KEY",
+        hide_env_values = true
+    )]
+    pub new_key: String,
 }
 
 #[derive(Args)]

@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use entitle_server::cli::{Cli, Command, run_admin};
+use entitle_server::cli::{Cli, Command, RotateArgs, run_admin};
 use entitle_server::config::Config;
 use entitle_server::rate_limit::SdkBudget;
-use entitle_server::{Adapters, AppState, Cipher, MIGRATOR, fx, outbox, router};
+use entitle_server::{Adapters, AppState, Cipher, MIGRATOR, fx, outbox, rotate, router};
 use sqlx::postgres::PgPoolOptions;
 use tokio::sync::watch;
 use tracing_subscriber::EnvFilter;
@@ -21,7 +21,30 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Some(Command::RotateEncryptionKey(args)) => rotate_key(args).await,
     }
+}
+
+async fn rotate_key(args: RotateArgs) -> anyhow::Result<()> {
+    let old = Cipher::from_base64(&args.old_key).context("old key")?;
+    let new = Cipher::from_base64(&args.new_key).context("new key")?;
+    if args.old_key.trim() == args.new_key.trim() {
+        anyhow::bail!("the old and the new key are the same");
+    }
+    let db = PgPoolOptions::new()
+        .max_connections(1)
+        .connect(&args.database_url)
+        .await
+        .context("connecting to postgres")?;
+    // The sealed columns of this version must exist.
+    MIGRATOR.run(&db).await.context("running migrations")?;
+    let rotated = rotate::rotate_encryption_key(&db, &old, &new).await?;
+    println!(
+        "Re-encrypted {} store credentials, {} webhook signing secrets and {} identity secrets. \
+         Start entitle with the new ENTITLE_ENCRYPTION_KEY.",
+        rotated.store_credentials, rotated.webhook_secrets, rotated.identity_secrets
+    );
+    Ok(())
 }
 
 async fn serve() -> anyhow::Result<()> {

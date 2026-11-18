@@ -17,6 +17,7 @@ pub mod metrics;
 pub mod outbox;
 pub mod purchases;
 pub mod rate_limit;
+pub mod rotate;
 pub mod routes;
 
 use std::sync::Arc;
