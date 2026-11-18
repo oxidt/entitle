@@ -81,6 +81,12 @@ entitle admin credentials set "My App" play_store play.json   # body as in docs/
 entitle admin customers grant "My App" user_42 pro --days 30  # support: also get, revoke
 ```
 
+Upgrading: versions before 0.1.0 stored App Store consumables and non-renewing
+subscriptions, and versions up to 0.1.0 stored consumed or rented Google Play purchases,
+as lifetime purchases. `entitle admin products lifetime "My App"` lists the products with active
+lifetime purchases and the entitlements they unlock (read-only); detach any of those
+products from its entitlements (see `docs/api.md`, `GET …/lifetime-purchases`).
+
 With Docker: `docker compose exec entitle entitle admin …` (the container already
 has the token). Webhook endpoints are set with the HTTP API (see `docs/api.md`).
 Point the stores at `/webhooks/{creem|apple|google}/{project_id}`.

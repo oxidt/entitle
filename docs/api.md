@@ -439,6 +439,17 @@ longer resolves).
 - `GET …/entitlements` (with `product_ids`), `DELETE …/entitlements/{entitlement_id}`
 - `PUT …/entitlements/{entitlement_id}/products/{product_id}` → `204` (attach, idempotent)
 - `DELETE …/entitlements/{entitlement_id}/products/{product_id}` → `204` (detach)
+- `GET …/lifetime-purchases` → `200` `[{"store", "product_id", "environment",
+  "display_name", "entitlements": ["pro"], "active_purchases", "first_purchased_at",
+  "last_purchased_at"}]`: App Store and Google Play products with active one-time
+  (lifetime) purchases, per store, product id and environment. Read-only; `display_name`
+  is `null` and `entitlements` empty for product ids that are not registered.
+  For review after upgrading: earlier versions stored App Store consumables and
+  non-renewing subscriptions, and consumed or rented Google Play purchases, as lifetime
+  purchases. Purchases do not record the store's product type, so entitle cannot tell
+  them apart itself. If a listed product is one of these, detach it from its
+  entitlements: access from its purchases ends at once (entitlements are computed on
+  read; no webhook events are sent). Purchases and their history are kept.
 
 ### Outgoing webhook endpoints
 

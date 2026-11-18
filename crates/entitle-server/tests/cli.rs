@@ -3,7 +3,7 @@ mod common;
 use clap::Parser;
 use common::TestApp;
 use entitle_server::cli::{Cli, Command, run_admin};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sqlx::PgPool;
 
 /// Serves the test app on a local port and returns its base URL.
@@ -73,6 +73,10 @@ async fn admin_cli_sets_up_a_project(db: PgPool) {
         .await
         .unwrap();
     assert_eq!(ents[0]["product_ids"][0], product["id"], "{ents}");
+    let lifetime = admin(&url, &["products", "lifetime", "Quest"])
+        .await
+        .unwrap();
+    assert_eq!(lifetime, json!([]));
 
     let dir = std::env::temp_dir().join(format!("entitle-cli-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();

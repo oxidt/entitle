@@ -78,6 +78,10 @@ pub fn router() -> Router<AppState> {
             patch(update_product).delete(delete_product),
         )
         .route(
+            "/projects/{project_id}/lifetime-purchases",
+            get(lifetime_purchases),
+        )
+        .route(
             "/projects/{project_id}/entitlements",
             post(create_entitlement).get(list_entitlements),
         )
@@ -960,6 +964,53 @@ async fn delete_product(
         .execute(&state.db)
         .await?;
     deleted(r.rows_affected(), "product")
+}
+
+/// App Store and Google Play product ids with active one-time (lifetime) purchases.
+#[derive(Serialize, FromRow)]
+struct LifetimeProductOut {
+    store: String,
+    product_id: String,
+    environment: String,
+    display_name: Option<String>,
+    /// Identifiers of the entitlements the product unlocks.
+    entitlements: Vec<String>,
+    active_purchases: i64,
+    first_purchased_at: DateTime<Utc>,
+    last_purchased_at: DateTime<Utc>,
+}
+
+/// Read-only review list. Earlier versions stored every non-subscription App Store purchase
+/// (consumables, non-renewing subscriptions) as lifetime, and Google Play
+/// purchases were stored as lifetime even when consumed later or rented. Stored rows do
+/// not record the store's product type, so operators review them per product.
+async fn lifetime_purchases(
+    _: Admin,
+    State(state): State<AppState>,
+    Path(project_id): Path<Uuid>,
+) -> ApiResult<Json<Vec<LifetimeProductOut>>> {
+    let project = ensure_project(&state, project_id).await?;
+    let rows = sqlx::query_as(
+        "SELECT pu.store, pu.product_id, pu.environment, pr.display_name,
+            COALESCE((SELECT array_agg(e.identifier ORDER BY e.identifier)
+                      FROM entitlement_products ep
+                      JOIN entitlements e ON e.id = ep.entitlement_id
+                      WHERE ep.product_id = pr.id), '{}') AS entitlements,
+            count(*) AS active_purchases,
+            min(pu.purchased_at) AS first_purchased_at,
+            max(pu.purchased_at) AS last_purchased_at
+         FROM purchases pu
+         LEFT JOIN products pr ON pr.project_id = pu.project_id AND pr.store = pu.store
+             AND pr.store_product_id = pu.product_id
+         WHERE pu.project_id = $1 AND pu.store IN ('app_store', 'play_store')
+           AND pu.kind = 'one_time' AND pu.status = 'active'
+         GROUP BY pu.store, pu.product_id, pu.environment, pr.id, pr.display_name
+         ORDER BY pu.store, pu.product_id, pu.environment",
+    )
+    .bind(project.0)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(rows))
 }
 
 // ---- entitlements ----

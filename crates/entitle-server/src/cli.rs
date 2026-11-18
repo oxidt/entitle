@@ -141,6 +141,12 @@ pub enum ProductsCommand {
         #[arg(long)]
         billing_period: Option<String>,
     },
+    /// App Store and Google Play products with active lifetime purchases, to review for
+    /// consumables, non-renewing subscriptions and rentals stored by earlier versions (read-only).
+    Lifetime {
+        /// Project id or name.
+        project: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -335,6 +341,13 @@ pub async fn run_admin(args: AdminArgs) -> anyhow::Result<Value> {
         AdminCommand::Products(ProductsCommand::List { project }) => {
             c.get(&format!("{}/products", c.project(&project).await?))
                 .await
+        }
+        AdminCommand::Products(ProductsCommand::Lifetime { project }) => {
+            c.get(&format!(
+                "{}/lifetime-purchases",
+                c.project(&project).await?
+            ))
+            .await
         }
         AdminCommand::Products(ProductsCommand::Create {
             project,
