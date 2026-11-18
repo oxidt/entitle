@@ -1,12 +1,13 @@
 //! The MCP server (rmcp, Streamable HTTP). Every tool is a call to the admin API
-//! in-process, so tools share its validation and errors; results are its JSON. Write
-//! tools need the `mcp:write` scope.
+//! in-process, so tools share its validation and errors; results are its JSON, minus
+//! customer credentials (see [`redact_customer`]). Write tools need the `mcp:write` scope.
 
 use std::sync::Arc;
 
 use axum::Router;
 use axum::http::Method;
 use axum::http::request::Parts;
+use entitle_core::identity::is_anonymous;
 use reqwest::Url;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
@@ -87,8 +88,10 @@ struct CustomersInput {
 struct CustomerInput {
     /// Project id (UUID) from `list_projects`.
     project_id: String,
-    /// The customer's app user id (any of their aliases).
-    app_user_id: String,
+    /// The customer's app user id (any of their aliases). Give this or `customer_id`.
+    app_user_id: Option<String>,
+    /// The customer's id (UUID), as `list_customers` and `list_activity` return it.
+    customer_id: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -97,8 +100,10 @@ struct ActivityInput {
     project_id: String,
     /// `production` or `sandbox`; both when absent.
     environment: Option<String>,
-    /// Only this customer's purchases.
+    /// Only this customer's purchases, by app user id.
     app_user_id: Option<String>,
+    /// Only this customer's purchases, by customer id (UUID).
+    customer_id: Option<String>,
     /// 1 to 200, default 50.
     limit: Option<i64>,
 }
@@ -160,29 +165,110 @@ fn encode(s: &str) -> String {
         .collect()
 }
 
+/// Anonymous app user ids are bearer credentials with the app's public key, and store
+/// transaction ids authorize a restore: MCP results carry neither (as the SDK redacts
+/// them for public keys). `customer_id` identifies a customer instead.
+fn redact_customer(info: &mut Value) {
+    redact_app_user_id(info);
+    if let Some(aliases) = info.get_mut("aliases").and_then(Value::as_array_mut) {
+        aliases.retain(|a| !a.as_str().is_some_and(is_anonymous));
+    }
+    for purchase in info
+        .get_mut("purchases")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(purchase) = purchase.as_object_mut() {
+            purchase.remove("original_transaction_id");
+            purchase.remove("store_transaction_id");
+        }
+    }
+}
+
+/// `app_user_id` becomes `null` when it is anonymous.
+fn redact_app_user_id(item: &mut Value) {
+    if let Some(id) = item.get_mut("app_user_id")
+        && id.as_str().is_some_and(is_anonymous)
+    {
+        *id = Value::Null;
+    }
+}
+
+/// [`redact_app_user_id`] for every item of a list.
+fn redact_list(list: &mut Value) {
+    for item in list.as_array_mut().into_iter().flatten() {
+        redact_app_user_id(item);
+    }
+}
+
 impl Tools {
     fn new(state: AppState) -> Self {
         Tools { state }
     }
 
     async fn get(&self, path: &str) -> Result<CallToolResult, ErrorData> {
-        self.call(Method::GET, path, None).await
+        self.call(Method::GET, path, None, |_| {}).await
     }
 
-    /// The admin API's JSON as the tool result; its errors as tool errors the model sees.
+    /// The admin API's JSON, passed through `redact`, as the tool result; its errors as
+    /// tool errors the model sees.
     async fn call(
         &self,
         method: Method,
         path: &str,
         body: Option<Value>,
+        redact: fn(&mut Value),
     ) -> Result<CallToolResult, ErrorData> {
         Ok(
             match api::call::<Value>(&self.state, method, path, body).await {
-                Ok(json) => CallToolResult::success(vec![ContentBlock::text(json.to_string())]),
+                Ok(mut json) => {
+                    redact(&mut json);
+                    CallToolResult::success(vec![ContentBlock::text(json.to_string())])
+                }
                 Err(e) => CallToolResult::error(vec![ContentBlock::text(e.0)]),
             },
         )
     }
+
+    /// An app user id of the customer, from either input. `Ok(None)` for an unknown
+    /// customer id (the tool then reports it as not found).
+    async fn app_user_id(
+        &self,
+        project_id: &str,
+        app_user_id: Option<String>,
+        customer_id: Option<String>,
+    ) -> Result<Option<String>, ErrorData> {
+        let customer_id = match (app_user_id, customer_id) {
+            (Some(app_user_id), None) => return Ok(Some(app_user_id)),
+            (None, Some(customer_id)) => customer_id,
+            _ => {
+                return Err(ErrorData::invalid_params(
+                    "give either app_user_id or customer_id",
+                    None,
+                ));
+            }
+        };
+        let parse = |s: &str, what| {
+            uuid::Uuid::parse_str(s)
+                .map_err(|_| ErrorData::invalid_params(format!("{what} must be a UUID"), None))
+        };
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT app_user_id FROM customer_aliases
+             WHERE project_id = $1 AND customer_id = $2
+             ORDER BY created_at, app_user_id LIMIT 1",
+        )
+        .bind(parse(project_id, "project_id")?)
+        .bind(parse(&customer_id, "customer_id")?)
+        .fetch_optional(&self.state.db)
+        .await
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(row.map(|(id,)| id))
+    }
+}
+
+fn unknown_customer() -> CallToolResult {
+    CallToolResult::error(vec![ContentBlock::text("customer not found")])
 }
 
 /// Write tools refuse tokens granted without `mcp:write`.
@@ -263,24 +349,26 @@ impl Tools {
             ("limit", p.limit.map(|l| l.to_string())),
             ("offset", p.offset.map(|o| o.to_string())),
         ];
-        self.get(&project_path(&p.project_id, &["customers"], &query)?)
-            .await
+        let path = project_path(&p.project_id, &["customers"], &query)?;
+        self.call(Method::GET, &path, None, redact_list).await
     }
 
     #[tool(
-        description = "Look up one customer: active entitlements with expiry, purchases and subscriptions across stores, and aliases.",
+        description = "Look up one customer by app_user_id or customer_id: active entitlements with expiry, purchases and subscriptions across stores, and identified aliases.",
         annotations(read_only_hint = true)
     )]
     async fn get_customer(
         &self,
         Parameters(p): Parameters<CustomerInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        self.get(&project_path(
-            &p.project_id,
-            &["customers", &p.app_user_id],
-            &[],
-        )?)
-        .await
+        let Some(app_user_id) = self
+            .app_user_id(&p.project_id, p.app_user_id, p.customer_id)
+            .await?
+        else {
+            return Ok(unknown_customer());
+        };
+        let path = project_path(&p.project_id, &["customers", &app_user_id], &[])?;
+        self.call(Method::GET, &path, None, redact_customer).await
     }
 
     #[tool(
@@ -291,13 +379,23 @@ impl Tools {
         &self,
         Parameters(p): Parameters<ActivityInput>,
     ) -> Result<CallToolResult, ErrorData> {
+        let app_user_id = match (p.app_user_id, p.customer_id) {
+            (None, None) => None,
+            (app_user_id, customer_id) => match self
+                .app_user_id(&p.project_id, app_user_id, customer_id)
+                .await?
+            {
+                Some(app_user_id) => Some(app_user_id),
+                None => return Ok(unknown_customer()),
+            },
+        };
         let query = [
             ("environment", p.environment),
-            ("app_user_id", p.app_user_id),
+            ("app_user_id", app_user_id),
             ("limit", p.limit.map(|l| l.to_string())),
         ];
-        self.get(&project_path(&p.project_id, &["activity"], &query)?)
-            .await
+        let path = project_path(&p.project_id, &["activity"], &query)?;
+        self.call(Method::GET, &path, None, redact_list).await
     }
 
     #[tool(
@@ -330,6 +428,7 @@ impl Tools {
             Method::POST,
             &path,
             Some(json!({"expires_at": p.expires_at})),
+            redact_customer,
         )
         .await
     }
@@ -360,7 +459,7 @@ impl Tools {
             ],
             &[],
         )?;
-        self.call(Method::POST, &path, None).await
+        self.call(Method::POST, &path, None, redact_customer).await
     }
 }
 

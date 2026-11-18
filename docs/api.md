@@ -614,6 +614,12 @@ Enabled when `ENTITLE_PUBLIC_URL` is set. A Streamable HTTP MCP server (stateles
 responses) with tools over the admin API. Results are the admin API's JSON; its errors
 come back as tool errors.
 
+Customer results leave out what would let the reader act as a customer, as the SDK
+does for public keys: anonymous app user ids (`$entitle_anon:…`) are removed from
+`aliases` and shown as `app_user_id: null` in customer lists and activity, and purchases
+have no `original_transaction_id` / `store_transaction_id`. `customer_id` identifies a
+customer instead: `get_customer` and `list_activity` take it in place of `app_user_id`.
+
 - Read (scope `mcp`): `list_projects`, `list_products`, `list_entitlements`, `get_metrics`,
   `list_customers`, `get_customer`, `list_activity`.
 - Write (scope `mcp:write`): `grant_entitlement`, `revoke_entitlement` (promotional grants,

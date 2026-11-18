@@ -371,3 +371,93 @@ async fn discovery_metadata(db: PgPool) {
     let meta: Value = serde_json::from_str(&text(response).await).unwrap();
     assert_eq!(meta["resource"], "http://localhost:8080/mcp");
 }
+
+/// Anonymous ids act as the customer with the public key and store transaction ids
+/// authorize a restore: read tools must not hand them out.
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn read_tools_hide_customer_credentials(db: PgPool) {
+    use axum::http::Method;
+    use chrono::{Duration, Utc};
+    use entitle_core::Store;
+    use entitle_core::testing::sub;
+
+    let app = TestApp::new(db).await;
+    let (client_id, code) = authorize(&app, false).await;
+    let (_, token) = exchange(&app, &client_id, &code).await;
+    let access = token["access_token"].as_str().unwrap();
+
+    // One customer stays anonymous, one logs in from an anonymous id; both bought.
+    let mut ids = Vec::new();
+    for (n, login) in [(1, None), (2, Some("alice"))] {
+        let anon = format!("$entitle_anon:{}", uuid::Uuid::new_v4());
+        let customer = app.customer(&anon).await["customer_id"].clone();
+        let now = Utc::now();
+        let mut s = sub(
+            Store::AppStore,
+            "pro_monthly",
+            now - Duration::days(1),
+            Some(now + Duration::days(30)),
+        );
+        s.original_transaction_id = format!("otid-secret-{n}");
+        s.store_transaction_id = format!("txid-secret-{n}");
+        s.customer_ref = Some(entitle_core::CustomerId(
+            customer.as_str().unwrap().parse().unwrap(),
+        ));
+        app.notify("apple", &format!("e{n}"), vec![s]).await;
+        if let Some(login) = login {
+            let (status, _) = app
+                .sdk(
+                    Method::POST,
+                    &format!("/customers/{anon}/login"),
+                    Some(json!({"new_app_user_id": login})),
+                )
+                .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+        ids.push(customer);
+    }
+
+    let tool_text = |name: &'static str, args: Value| {
+        let app = &app;
+        async move {
+            let response = call_tool(app, access, name, args).await;
+            assert_ne!(response["result"]["isError"], true, "{response}");
+            response["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        }
+    };
+    let project = app.project;
+    let texts = [
+        tool_text("list_customers", json!({"project_id": project})).await,
+        tool_text("list_activity", json!({"project_id": project})).await,
+        tool_text(
+            "list_activity",
+            json!({"project_id": project, "customer_id": ids[0]}),
+        )
+        .await,
+        tool_text(
+            "get_customer",
+            json!({"project_id": project, "customer_id": ids[0]}),
+        )
+        .await,
+        tool_text(
+            "get_customer",
+            json!({"project_id": project, "app_user_id": "alice"}),
+        )
+        .await,
+    ];
+    for text in &texts {
+        assert!(!text.contains("$entitle_anon:"), "{text}");
+        assert!(!text.contains("-secret-"), "{text}");
+    }
+    let anonymous: Value = serde_json::from_str(&texts[3]).unwrap();
+    assert_eq!(anonymous["customer_id"], ids[0]);
+    assert!(anonymous["entitlements"]["pro"].is_object(), "{anonymous}");
+    let alice: Value = serde_json::from_str(&texts[4]).unwrap();
+    assert_eq!(alice["aliases"], json!(["alice"]));
+    assert_eq!(alice["customer_id"], ids[1]);
+    let customers: Value = serde_json::from_str(&texts[0]).unwrap();
+    assert_eq!(customers.as_array().unwrap().len(), 2);
+}
