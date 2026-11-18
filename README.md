@@ -60,7 +60,7 @@ Prebuilt images: `ghcr.io/oxidt/entitle:latest` (every commit on `main` is also 
 | `ENTITLE_TRUST_PROXY` | no | `true` behind a reverse proxy that sets `X-Forwarded-For`: rate limits then key on its last entry instead of the TCP peer |
 | `ENTITLE_SDK_RATE_PER_IP` | no | public-key requests per minute and client IP to the SDK routes that create customers or call a store (customer lookup, login, sync, checkout), default `600`; over it: `429` (see `docs/api.md`) |
 | `ENTITLE_SDK_RATE_PER_PROJECT` | no | the same per project, default `6000` |
-| `RUST_LOG` | no | log filter, default `info` |
+| `RUST_LOG` | no | log filter, default `info`. Request spans (`debug`) record the method, route template and status, never the raw path: `/v1` paths carry app user ids, and anonymous ids act as credentials. Keep them out of your reverse proxy's access logs too. |
 | `ENTITLE_LOG_FORMAT` | no | `json` for JSON logs |
 
 ## First project

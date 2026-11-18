@@ -23,11 +23,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
-use axum::http::{Method, header};
+use axum::extract::MatchedPath;
+use axum::http::{Method, Request, header};
+use axum::response::Response;
 use axum::routing::get;
 use sqlx::PgPool;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
+use tracing::Span;
 
 pub use adapters::Adapters;
 pub use crypto::Cipher;
@@ -68,8 +71,30 @@ pub fn router(state: AppState) -> Router {
         .merge(mcp::router(&state))
         .fallback(|| async { error::ApiError::not_found("no such route") })
         .method_not_allowed_fallback(method_not_allowed)
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(request_span)
+                .on_response(|response: &Response, latency: Duration, span: &Span| {
+                    span.record("status", response.status().as_u16());
+                    tracing::debug!(?latency, "finished processing request");
+                }),
+        )
         .with_state(state)
+}
+
+/// The route template, never the URI: SDK paths carry app user ids, and anonymous ids
+/// are credentials.
+fn request_span<B>(request: &Request<B>) -> Span {
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str);
+    tracing::debug_span!(
+        "request",
+        method = %request.method(),
+        route,
+        status = tracing::field::Empty,
+    )
 }
 
 async fn method_not_allowed() -> error::ApiError {
