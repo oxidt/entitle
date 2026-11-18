@@ -77,7 +77,7 @@ function serve(sync: (body: { store: string; id: string }) => Response | Promise
   };
 }
 
-async function entitle(): Promise<Entitle> {
+async function entitle(appUserId = 'user_42'): Promise<Entitle> {
   const fetch: FetchLike = async (url, init) => {
     const path = new URL(url).pathname;
     const body = typeof init.body === 'string' ? JSON.parse(init.body) : undefined;
@@ -87,7 +87,7 @@ async function entitle(): Promise<Entitle> {
   return Entitle.configure({
     apiKey: 'pk_test',
     baseUrl: 'https://entitle.test',
-    appUserId: 'user_42',
+    appUserId,
     storage: memoryStorage(),
     fetch,
   });
@@ -290,6 +290,45 @@ describe('startPurchaseSync', () => {
 
     expect(log).toEqual(['POST /sync play_store:tok_2']);
     expect(native.finishTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('in-flight syncs', () => {
+  test('instances and customers never share a sync result', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    server = async (method, path) => {
+      const user = decodeURIComponent(path.split('/')[3]!);
+      if (method === 'POST') await gate;
+      return json({ ...info(['pro']), app_user_id: user });
+    };
+    const [a, b] = [await entitle('user_a'), await entitle('user_b')];
+    currentPurchases = [appStore('11')];
+    const synced = Promise.all([restorePurchases(a), restorePurchases(b)]);
+    await until(() => log.filter((l) => l.startsWith('POST')).length === 2);
+    release();
+    const [infoA, infoB] = await synced;
+    expect(infoA.app_user_id).toBe('user_a');
+    expect(infoB.app_user_id).toBe('user_b');
+  });
+
+  test('a result for an account switched away from is discarded', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    server = async (method, path) => {
+      const user = decodeURIComponent(path.split('/')[3]!);
+      if (method === 'POST') await gate;
+      return json({ ...info(method === 'POST' ? ['pro'] : []), app_user_id: user });
+    };
+    const e = await entitle('user_a');
+    currentPurchases = [appStore('12')];
+    const restored = restorePurchases(e);
+    await until(() => log.some((l) => l.startsWith('POST')));
+    await e.logOut();
+    release();
+    const result = await restored;
+    expect(result.app_user_id).toBe(e.appUserId);
+    expect(result.entitlements.pro).toBeUndefined();
   });
 });
 

@@ -15,8 +15,11 @@ export interface PurchaseSyncOptions {
   onError?: (error: unknown, purchase: StorePurchase) => void;
 }
 
-/** Syncs in flight, by purchase: `purchase()` and `startPurchaseSync` share one sync per purchase. */
-const inFlight = new Map<string, Promise<CustomerInfo>>();
+/**
+ * Syncs in flight per SDK instance, by app user id and purchase: `purchase()` and
+ * `startPurchaseSync` share one sync per purchase, but never across instances or customers.
+ */
+const inFlight = new WeakMap<Entitle, Map<string, Promise<CustomerInfo>>>();
 
 /**
  * Buys `productId` in the native store for the current entitle customer, syncs it with
@@ -75,18 +78,24 @@ export function startPurchaseSync(entitle: Entitle, options: PurchaseSyncOptions
 }
 
 function syncAndFinish(entitle: Entitle, p: StorePurchase): Promise<CustomerInfo> {
-  const key = p.store === 'app_store' ? `app_store:${p.transactionId}` : `play_store:${p.purchaseToken}`;
-  const running = inFlight.get(key);
-  if (running) return running;
+  const forUser = entitle.appUserId;
+  const key = `${forUser}\n${p.store === 'app_store' ? `app_store:${p.transactionId}` : `play_store:${p.purchaseToken}`}`;
+  let running = inFlight.get(entitle);
+  if (!running) inFlight.set(entitle, (running = new Map()));
+  const existing = running.get(key);
+  if (existing) return existing;
   const sync = (async () => {
+    let info: CustomerInfo;
     if (p.store === 'play_store') {
       // The entitle server acknowledges the purchase after verifying it.
-      return entitle.syncPurchase({ store: 'play_store', id: p.purchaseToken });
+      info = await entitle.syncPurchase({ store: 'play_store', id: p.purchaseToken });
+    } else {
+      info = await entitle.syncPurchase({ store: 'app_store', id: p.transactionId });
+      await EntitleStore.finishTransaction({ transactionId: p.transactionId });
     }
-    const info = await entitle.syncPurchase({ store: 'app_store', id: p.transactionId });
-    await EntitleStore.finishTransaction({ transactionId: p.transactionId });
-    return info;
-  })().finally(() => inFlight.delete(key));
-  inFlight.set(key, sync);
+    // The account switched while syncing: that info is the previous customer's.
+    return entitle.appUserId === forUser ? info : entitle.getCustomerInfo();
+  })().finally(() => running.delete(key));
+  running.set(key, sync);
   return sync;
 }
