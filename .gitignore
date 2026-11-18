@@ -1,0 +1,6 @@
+/target
+.env
+*.p8
+.DS_Store
+/crates/entitle-server/oxidt-ui.css
+.enveil.toml

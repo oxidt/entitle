@@ -1,0 +1,68 @@
+{
+  "name": "@oxidt/entitle-capacitor",
+  "version": "0.1.0",
+  "description": "Capacitor plugin for entitle: native App Store (StoreKit 2) and Google Play Billing purchases, synced to the entitle server.",
+  "license": "MIT",
+  "sideEffects": false,
+  "main": "dist/plugin.cjs.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "unpkg": "dist/plugin.js",
+  "files": [
+    "android/src/main/",
+    "android/build.gradle",
+    "dist/",
+    "ios/Sources",
+    "Package.swift",
+    "OxidtEntitleCapacitor.podspec"
+  ],
+  "author": "Hauke Jung",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oxidt/entitle.git",
+    "directory": "sdk/capacitor"
+  },
+  "keywords": [
+    "capacitor",
+    "plugin",
+    "native",
+    "storekit",
+    "in-app-purchase",
+    "entitle"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && rollup -c rollup.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test",
+    "verify:ios": "xcodebuild build -scheme OxidtEntitleCapacitor -destination 'generic/platform=iOS Simulator'",
+    "verify:android": "cd android && ./gradlew assembleDebug"
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0",
+    "@oxidt/entitle": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "@oxidt/entitle": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@oxidt/entitle": "file:../js",
+    "@types/bun": "^1.4.2",
+    "rollup": "^4.53.2",
+    "typescript": "^7.0.2"
+  },
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    },
+    "android": {
+      "src": "android"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

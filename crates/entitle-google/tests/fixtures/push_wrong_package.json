@@ -1,0 +1,11 @@
+{
+  "message": {
+    "attributes": {},
+    "data": "eyJ2ZXJzaW9uIjogIjEuMCIsICJwYWNrYWdlTmFtZSI6ICJjb20ub3RoZXIuYXBwIiwgImV2ZW50VGltZU1pbGxpcyI6ICIxNzg4MjU2ODAwMTIzIiwgInRlc3ROb3RpZmljYXRpb24iOiB7InZlcnNpb24iOiAiMS4wIn19",
+    "messageId": "55555555555",
+    "message_id": "55555555555",
+    "publishTime": "2026-09-01T10:00:00.123Z",
+    "publish_time": "2026-09-01T10:00:00.123Z"
+  },
+  "subscription": "projects/example/subscriptions/play-rtdn"
+}

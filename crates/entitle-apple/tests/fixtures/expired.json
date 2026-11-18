@@ -1,0 +1,49 @@
+{
+  "notificationType": "EXPIRED",
+  "subtype": "VOLUNTARY",
+  "notificationUUID": "7f1c1e8a-1f0e-4a5b-9a51-000000000008",
+  "data": {
+    "environment": "Sandbox",
+    "appAppleId": 1234567890,
+    "bundleId": "com.example.app",
+    "bundleVersion": "42",
+    "status": 2,
+    "transaction": {
+      "transactionId": "2000000100000002",
+      "originalTransactionId": "2000000100000001",
+      "webOrderLineItemId": "2000000011111111",
+      "bundleId": "com.example.app",
+      "productId": "com.example.app.pro.monthly",
+      "subscriptionGroupIdentifier": "21000001",
+      "purchaseDate": 1767225600000,
+      "originalPurchaseDate": 1767225600000,
+      "expiresDate": 1769904000000,
+      "quantity": 1,
+      "type": "Auto-Renewable Subscription",
+      "appAccountToken": "7e3fb20b-4cdb-47cc-936d-99d65f608138",
+      "inAppOwnershipType": "PURCHASED",
+      "signedDate": 1768435200000,
+      "environment": "Sandbox",
+      "transactionReason": "PURCHASE",
+      "storefront": "DEU",
+      "storefrontId": "143443",
+      "price": 4990,
+      "currency": "EUR"
+    },
+    "renewal": {
+      "originalTransactionId": "2000000100000001",
+      "autoRenewProductId": "com.example.app.pro.monthly",
+      "productId": "com.example.app.pro.monthly",
+      "autoRenewStatus": 0,
+      "signedDate": 1768435200000,
+      "environment": "Sandbox",
+      "recentSubscriptionStartDate": 1767225600000,
+      "renewalDate": 1769904000000,
+      "currency": "EUR",
+      "renewalPrice": 4990,
+      "expirationIntent": 1
+    }
+  },
+  "version": "2.0",
+  "signedDate": 1768435200000
+}

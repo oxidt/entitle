@@ -1,0 +1,47 @@
+{
+  "id": "sub_6pC2lNB6joCRQIZ1aMrTpi",
+  "object": "subscription",
+  "product": {
+    "id": "prod_monthly",
+    "object": "product",
+    "name": "Pro Monthly",
+    "price": 999,
+    "currency": "EUR",
+    "billing_type": "recurring",
+    "billing_period": "every-month",
+    "status": "active",
+    "mode": "test"
+  },
+  "customer": {
+    "id": "cust_1OcIK1GEuVvXZwD19tjq2z",
+    "object": "customer",
+    "email": "customer@example.com",
+    "name": "Test Customer",
+    "country": "NL",
+    "mode": "test"
+  },
+  "collection_method": "charge_automatically",
+  "status": "active",
+  "last_transaction_id": "tran_5yMaWzAl3jxuGJMCOrYWwk",
+  "last_transaction_date": "2026-01-01T00:00:05.000Z",
+  "next_transaction_date": "2026-02-01T00:00:00.000Z",
+  "current_period_start_date": "2026-01-01T00:00:00.000Z",
+  "current_period_end_date": "2026-02-01T00:00:00.000Z",
+  "canceled_at": null,
+  "created_at": "2026-01-01T00:00:03.000Z",
+  "updated_at": "2026-01-01T00:00:05.000Z",
+  "metadata": {
+    "entitle_customer_id": "7f0c3a52-4f0e-4b8e-9c4a-2f1d8a7e6b10",
+    "source": "web"
+  },
+  "mode": "test",
+  "items": [
+    {
+      "object": "subscription_item",
+      "id": "sitem_1",
+      "product_id": "prod_monthly",
+      "price_id": "pprice_1",
+      "units": 1
+    }
+  ]
+}

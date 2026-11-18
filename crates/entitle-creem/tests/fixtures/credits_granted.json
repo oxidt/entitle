@@ -1,0 +1,15 @@
+{
+  "id": "evt_credits_granted",
+  "eventType": "credits.granted",
+  "created_at": 1767225660000,
+  "object": {
+    "id": "cct_3mNpK8rW2xY",
+    "object": "customer_credits_grant",
+    "customer_id": "cust_1OcIK1GEuVvXZwD19tjq2z",
+    "account_id": "cca_7hQ2nL5vX9k",
+    "bucket_name": "ai_credits",
+    "amount_minor_units": "5000",
+    "balance_after_minor_units": "5250",
+    "occurred_at": "2026-01-01T00:00:00.000Z"
+  }
+}

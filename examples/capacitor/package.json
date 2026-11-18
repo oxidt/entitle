@@ -1,0 +1,22 @@
+{
+  "name": "entitle-capacitor-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "rm -rf www && bun build ./index.html --outdir www",
+    "typecheck": "tsc --noEmit",
+    "sync": "bun run build && cap sync"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/preferences": "^8.0.1",
+    "@oxidt/entitle": "^0.1.0",
+    "@oxidt/entitle-capacitor": "^0.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "typescript": "^7.0.2"
+  }
+}

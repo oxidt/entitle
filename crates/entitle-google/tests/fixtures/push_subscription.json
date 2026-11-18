@@ -1,0 +1,11 @@
+{
+  "message": {
+    "attributes": {},
+    "data": "eyJ2ZXJzaW9uIjogIjEuMCIsICJwYWNrYWdlTmFtZSI6ICJjb20uZXhhbXBsZS5hcHAiLCAiZXZlbnRUaW1lTWlsbGlzIjogIjE3ODgyNTY4MDAxMjMiLCAic3Vic2NyaXB0aW9uTm90aWZpY2F0aW9uIjogeyJ2ZXJzaW9uIjogIjEuMCIsICJub3RpZmljYXRpb25UeXBlIjogNCwgInB1cmNoYXNlVG9rZW4iOiAic3ViLWFjdGl2ZS10b2tlbiIsICJzdWJzY3JpcHRpb25JZCI6ICJwcm9fbW9udGhseSJ9fQ==",
+    "messageId": "11111111111",
+    "message_id": "11111111111",
+    "publishTime": "2026-09-01T10:00:00.123Z",
+    "publish_time": "2026-09-01T10:00:00.123Z"
+  },
+  "subscription": "projects/example/subscriptions/play-rtdn"
+}

@@ -1,0 +1,22 @@
+{
+  "kind": "androidpublisher#productPurchaseV2",
+  "productLineItem": [
+    {
+      "productId": "lifetime",
+      "productOfferDetails": {
+        "quantity": 1,
+        "refundableQuantity": 1,
+        "consumptionState": "CONSUMPTION_STATE_YET_TO_BE_CONSUMED",
+        "purchaseOptionId": "buy"
+      }
+    }
+  ],
+  "purchaseStateContext": {
+    "purchaseState": "PURCHASED"
+  },
+  "orderId": "GPA.5555-6666-7777-88888",
+  "obfuscatedExternalAccountId": "7f0c3a52-4f0e-4b8e-9c4a-2f1d8a7e6b10",
+  "regionCode": "DE",
+  "purchaseCompletionTime": "2026-08-01T10:00:00Z",
+  "acknowledgementState": "ACKNOWLEDGEMENT_STATE_PENDING"
+}

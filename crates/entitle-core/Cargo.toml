@@ -1,0 +1,21 @@
+[package]
+name = "entitle-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs = { workspace = true, optional = true }
+uuid.workspace = true
+
+[features]
+# Snapshot builders for tests in other crates.
+testing = []
+# TypeScript bindings for the JS SDK (see sdk/js/README.md).
+ts = ["dep:ts-rs"]

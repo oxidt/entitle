@@ -1,0 +1,22 @@
+[package]
+name = "entitle-apple"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+app-store-server-library = { version = "6.0.1", default-features = false, features = ["ring", "api-client"] }
+async-trait.workspace = true
+chrono.workspace = true
+entitle-core.workspace = true
+http = "1.5.0"
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+base64.workspace = true
+rcgen = "0.14.10"
+tokio.workspace = true
+wiremock = "0.6.5"
