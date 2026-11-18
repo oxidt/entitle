@@ -212,7 +212,10 @@ Ownership:
   (`appAccountToken`, `obfuscatedExternalAccountId`, Creem checkout metadata)
   that resolves to a different existing customer with a non-anonymous app user
   id. Then the purchase provably belongs to that customer: `409 transfer_refused`,
-  nothing changes. Purchases made without an account token, whose token's
+  nothing changes. The token entitle stored from earlier store data counts too:
+  a store response without a token (e.g. a Creem `sub_…` lookup, which lacks
+  the checkout metadata) does not erase it. If the stored and the new token
+  resolve to different customers, the sync is refused as well. Purchases made without an account token, whose token's
   customer was erased, or whose token's customer is purely anonymous still
   transfer (an anonymous id does not survive a reinstall or a new device, so
   restoring with the same store account must keep working).

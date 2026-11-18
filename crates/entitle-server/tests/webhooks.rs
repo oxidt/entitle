@@ -396,6 +396,66 @@ async fn restore_of_another_customers_purchase_is_refused(db: PgPool) {
 }
 
 #[sqlx::test(migrator = "entitle_server::MIGRATOR")]
+async fn restore_without_the_token_respects_the_stored_owner(db: PgPool) {
+    let app = TestApp::new(db).await;
+    with_endpoint(&app).await;
+    let now = Utc::now();
+    // Alice buys through a Creem checkout: the notification carries her account token.
+    let (s, _) = app
+        .sdk(
+            Method::POST,
+            "/customers/alice/checkout",
+            Some(json!({"product_id": "prod_pro"})),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK);
+    let alice = cid(&app.customer("alice").await);
+    let mut checkout = sub(
+        Store::Creem,
+        "prod_pro",
+        now - Duration::days(1),
+        Some(now + Duration::days(30)),
+    );
+    checkout.original_transaction_id = "sub_1".into();
+    checkout.customer_ref = Some(alice);
+    app.notify("creem", "evt_1", vec![checkout.clone()]).await;
+    assert!(app.customer("alice").await["entitlements"]["pro"].is_object());
+
+    // A subscription-only lookup has no checkout metadata, so no account token.
+    let mut lookup = checkout;
+    lookup.customer_ref = None;
+    lookup.as_of = now + Duration::minutes(1);
+    app.fakes
+        .creem
+        .fetch
+        .lock()
+        .unwrap()
+        .insert("sub_1".into(), vec![lookup]);
+    let (s, body) = app
+        .sdk(
+            Method::POST,
+            "/customers/bob/sync",
+            Some(json!({"store": "creem", "id": "sub_1"})),
+        )
+        .await;
+    assert_eq!(s, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["error"]["code"], "transfer_refused");
+    assert!(app.customer("alice").await["entitlements"]["pro"].is_object());
+    assert_eq!(app.customer("bob").await["entitlements"], json!({}));
+    assert_eq!(events(&app).await, ["initial_purchase"]);
+
+    // Alice herself still restores it.
+    let (s, _) = app
+        .sdk(
+            Method::POST,
+            "/customers/alice/sync",
+            Some(json!({"store": "creem", "id": "sub_1"})),
+        )
+        .await;
+    assert_eq!(s, StatusCode::OK);
+}
+
+#[sqlx::test(migrator = "entitle_server::MIGRATOR")]
 async fn restore_moves_a_purchase_away_from_an_anonymous_customer(db: PgPool) {
     let app = TestApp::new(db).await;
     with_endpoint(&app).await;

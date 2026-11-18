@@ -105,7 +105,8 @@ pub async fn load_mapping(
     Ok(mapping)
 }
 
-/// A restore of a purchase whose store account token belongs to another customer.
+/// A restore of a purchase whose store account token (incoming or stored) belongs to
+/// another customer.
 #[derive(Debug, thiserror::Error)]
 #[error("this purchase belongs to another customer (its store account token points to them)")]
 pub struct TransferRefused;
@@ -165,13 +166,18 @@ pub async fn apply_snapshot(
         // A token of a purely anonymous customer only proves "same install": after a
         // reinstall or on a new device that id is gone, and the store account restoring
         // the purchase is the real proof of ownership. Only identified tokens refuse.
-        Source::Restore(customer) => Claim::Restore {
-            customer,
-            token_owner: match token_owner {
-                Some(owner) if is_identified(conn, owner).await? => Some(owner),
-                _ => None,
-            },
-        },
+        // The stored token counts too: a later store response may lack it.
+        Source::Restore(customer) => {
+            let stored_token_owner = match existing.as_ref().and_then(|r| r.customer_ref) {
+                Some(token) => resolve_token(conn, project, CustomerId(token)).await?,
+                None => None,
+            };
+            Claim::Restore {
+                customer,
+                token_owner: identified_only(conn, token_owner).await?,
+                stored_token_owner: identified_only(conn, stored_token_owner).await?,
+            }
+        }
     };
     let ownership = resolve_owner(old_owner, claim);
     let new_owner = match ownership {
@@ -381,6 +387,17 @@ async fn resolve_token(
     .fetch_optional(conn)
     .await?;
     Ok(row.map(|(id,)| CustomerId(id)))
+}
+
+/// `owner` if it is an identified customer.
+async fn identified_only(
+    conn: &mut PgConnection,
+    owner: Option<CustomerId>,
+) -> anyhow::Result<Option<CustomerId>> {
+    Ok(match owner {
+        Some(owner) if is_identified(conn, owner).await? => Some(owner),
+        _ => None,
+    })
 }
 
 /// Whether the customer has an app user id that is not SDK-generated anonymous.

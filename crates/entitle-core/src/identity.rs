@@ -98,10 +98,14 @@ pub enum Claim {
     /// token (appAccountToken / obfuscatedExternalAccountId / Creem metadata) resolves to.
     Notification { token_owner: Option<CustomerId> },
     /// A customer explicitly synced / restored this purchase from their device.
-    /// `token_owner` is the customer the store's account token resolves to, if any.
+    /// `token_owner` is the customer the incoming snapshot's account token resolves to,
+    /// `stored_token_owner` the one the token stored from earlier snapshots resolves to
+    /// (a later store response may omit it, e.g. a Creem subscription without its
+    /// checkout metadata).
     Restore {
         customer: CustomerId,
         token_owner: Option<CustomerId>,
+        stored_token_owner: Option<CustomerId>,
     },
 }
 
@@ -123,9 +127,11 @@ pub enum Ownership {
 /// - Notifications only link purchases that have no owner yet; they never move
 ///   an owned purchase (the token may be stale after a restore/transfer).
 /// - An explicit restore links unowned purchases and transfers owned ones to the
-///   restoring customer, unless the store's account token resolves to another
-///   existing customer: then the purchase provably is not theirs and is refused,
-///   whether or not it is linked yet.
+///   restoring customer, unless the incoming or the stored account token resolves to
+///   another existing customer: then the purchase provably is not theirs and is
+///   refused, whether or not it is linked yet. A missing incoming token never
+///   discards the stored one, and two tokens resolving to different customers are
+///   conflicting evidence: refused too.
 ///   The server passes no token owner for purely anonymous customers, whose id
 ///   is lost on reinstall.
 pub fn resolve_owner(current: Option<CustomerId>, claim: Claim) -> Ownership {
@@ -142,9 +148,16 @@ pub fn resolve_owner(current: Option<CustomerId>, claim: Claim) -> Ownership {
             _,
             Claim::Restore {
                 customer,
-                token_owner: Some(t),
+                token_owner,
+                stored_token_owner,
             },
-        ) if t != customer => Ownership::Refuse,
+        ) if [token_owner, stored_token_owner]
+            .into_iter()
+            .flatten()
+            .any(|t| t != customer) =>
+        {
+            Ownership::Refuse
+        }
         (None, Claim::Restore { customer, .. }) => Ownership::Assign(customer),
         (Some(from), Claim::Restore { customer, .. }) => Ownership::Transfer { from, to: customer },
     }
@@ -271,6 +284,7 @@ mod tests {
         let r = |c| Claim::Restore {
             customer: c,
             token_owner: None,
+            stored_token_owner: None,
         };
         assert_eq!(resolve_owner(None, r(cid(1))), Ownership::Assign(cid(1)));
         assert_eq!(resolve_owner(Some(cid(1)), r(cid(1))), Ownership::Keep);
@@ -288,6 +302,7 @@ mod tests {
         let r = |c, t| Claim::Restore {
             customer: c,
             token_owner: Some(t),
+            stored_token_owner: None,
         };
         // Owned by 1, token says 1, 2 restores: refused.
         assert_eq!(
@@ -316,6 +331,46 @@ mod tests {
         // Already owned by the restoring customer: unchanged.
         assert_eq!(
             resolve_owner(Some(cid(2)), r(cid(2), cid(1))),
+            Ownership::Keep
+        );
+    }
+
+    #[test]
+    fn restore_respects_the_stored_token_when_the_incoming_one_is_missing() {
+        let r = |c, stored, incoming| Claim::Restore {
+            customer: c,
+            token_owner: incoming,
+            stored_token_owner: stored,
+        };
+        // Owned by 1, stored token says 1, the new store response has none: 2 cannot take it.
+        assert_eq!(
+            resolve_owner(Some(cid(1)), r(cid(2), Some(cid(1)), None)),
+            Ownership::Refuse
+        );
+        assert_eq!(
+            resolve_owner(None, r(cid(2), Some(cid(1)), None)),
+            Ownership::Refuse
+        );
+        // Conflicting evidence: refused even though one token names the restoring customer.
+        assert_eq!(
+            resolve_owner(Some(cid(1)), r(cid(2), Some(cid(1)), Some(cid(2)))),
+            Ownership::Refuse
+        );
+        assert_eq!(
+            resolve_owner(Some(cid(1)), r(cid(2), Some(cid(2)), Some(cid(1)))),
+            Ownership::Refuse
+        );
+        // Both name the restoring customer: transfer.
+        assert_eq!(
+            resolve_owner(Some(cid(1)), r(cid(2), Some(cid(2)), None)),
+            Ownership::Transfer {
+                from: cid(1),
+                to: cid(2)
+            }
+        );
+        // The owner itself can always restore.
+        assert_eq!(
+            resolve_owner(Some(cid(1)), r(cid(1), Some(cid(1)), None)),
             Ownership::Keep
         );
     }
