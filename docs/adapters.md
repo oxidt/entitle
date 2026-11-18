@@ -72,7 +72,7 @@ Rules:
   | `Malformed(_)` | 400 | unparsable payload (store will not fix it by retrying) |
   | `NotFound` | 404 | `fetch_purchases`: unknown id |
   | `Credentials(_)` | 422 | missing/invalid credentials, store rejected auth |
-  | `Unsupported(_)` | 422 | a purchase type entitle cannot represent (App Store consumables, non-renewing subscriptions) |
+  | `Unsupported(_)` | 422 | a purchase type entitle cannot represent (App Store consumables, non-renewing subscriptions; consumed Google Play purchases, rentals) |
   | `Upstream(_)` | 502 | store API down / 5xx / timeout (store retries the webhook) |
   | `NotImplemented` | 501 | phase-1 stubs only |
 
@@ -207,6 +207,14 @@ Docker builds work): `Client::new(api_key, test_mode)` (or `with_base_url`, used
 - `fetch_purchases(purchase_token)`: `purchases.subscriptionsv2.get`, falling
   back to the one-time product purchase API. OAuth via the service account JSON
   (scope `androidpublisher`).
+- One-time products (`purchases.productsv2`) → `OneTime` (lifetime). Play has no
+  consumable product type: any one-time product can be consumed by the app, and only
+  the purchase's `productOfferDetails.consumptionState` shows it. So a purchase with
+  `CONSUMPTION_STATE_CONSUMED` (used up) or with `rentOfferDetails` (a rental, whose
+  end Play does not report) → `Unsupported` from `fetch_purchases`, never acknowledged;
+  notifications for them carry no snapshots. A consumable that is not consumed yet
+  looks like a non-consumable: do not attach consumable products to entitlements (the
+  SDKs never consume, so with them a purchase stays unconsumed).
 - Acknowledge unacknowledged purchases (Google refunds them after 3 days) —
   this is an API call, so it belongs in the adapter.
 - `testPurchase` present → `Environment::Sandbox`.

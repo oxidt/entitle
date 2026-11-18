@@ -575,6 +575,69 @@ async fn one_time_purchase_falls_back_to_products() {
     assert_eq!(snapshots[0].kind, PurchaseKind::OneTime);
 }
 
+/// `product_purchased.json` as a consumed purchase, or as a rental.
+fn unsupported_products() -> [(&'static str, Value); 2] {
+    let mut consumed = fixture("product_purchased.json");
+    consumed["productLineItem"][0]["productOfferDetails"]["consumptionState"] =
+        "CONSUMPTION_STATE_CONSUMED".into();
+    let mut rental = fixture("product_purchased.json");
+    rental["productLineItem"][0]["productOfferDetails"]["rentOfferDetails"] = json!({});
+    [("consumed", consumed), ("rental", rental)]
+}
+
+#[tokio::test]
+async fn consumed_and_rented_products_are_unsupported() {
+    for (what, product) in unsupported_products() {
+        let (server, adapter) = setup().await;
+        let sub = format!("{API}/subscriptionsv2/tokens/product-token");
+        mock_get(&server, &sub, 400, json!({"error": {"code": 400}})).await;
+        mock_get(
+            &server,
+            &format!("{API}/productsv2/tokens/product-token"),
+            200,
+            product,
+        )
+        .await;
+        // Not ours to keep: never acknowledged.
+        expect_ack(
+            &server,
+            &format!("{API}/products/lifetime/tokens/product-token:acknowledge"),
+            200,
+            0,
+        )
+        .await;
+        let err = adapter
+            .fetch_purchases(&credentials(), "product-token")
+            .await
+            .unwrap_err();
+        let AdapterError::Unsupported(message) = err else {
+            panic!("{what}: {err:?}");
+        };
+        assert!(message.contains(what), "{message}");
+    }
+}
+
+#[tokio::test]
+async fn consumed_and_rented_product_notifications_have_no_snapshots() {
+    for (what, product) in unsupported_products() {
+        let (server, adapter) = setup().await;
+        mock_get(
+            &server,
+            &format!("{API}/productsv2/tokens/product-token"),
+            200,
+            product,
+        )
+        .await;
+        let body = include_bytes!("fixtures/push_one_time.json");
+        let parsed = adapter
+            .parse_notification(&credentials(), &push(body, Some(&oidc_token(claims()))))
+            .await
+            .unwrap();
+        assert!(parsed.snapshots.is_empty(), "{what}");
+        assert_eq!(parsed.event_id, "22222222222");
+    }
+}
+
 #[tokio::test]
 async fn unknown_token_is_not_found() {
     let (_server, adapter) = setup().await;

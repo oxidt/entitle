@@ -33,6 +33,7 @@ const JWKS_MIN_REFRESH: Duration = Duration::from_secs(60);
 /// Access tokens are renewed this long before they expire.
 const TOKEN_MARGIN: Duration = Duration::from_secs(60);
 const ACK_PENDING: &str = "ACKNOWLEDGEMENT_STATE_PENDING";
+const CONSUMED: &str = "CONSUMPTION_STATE_CONSUMED";
 const PRODUCT_TYPE_SUBSCRIPTION: i32 = 1;
 const PRODUCT_TYPE_ONE_TIME: i32 = 2;
 /// `voidedPurchaseNotification.refundType`: `REFUND_TYPE_QUANTITY_BASED_PARTIAL_REFUND`.
@@ -328,6 +329,7 @@ impl GoogleAdapter {
         let product: ProductV2 = self
             .api_get(credentials, &format!("productsv2/tokens/{token}"))
             .await?;
+        lifetime_product(&product)?;
         let Some(snapshot) = product_snapshot(token, &product, as_of)? else {
             return Ok(vec![]);
         };
@@ -412,8 +414,14 @@ impl StoreAdapter for GoogleAdapter {
             self.subscription_snapshots(credentials, &s.purchase_token, as_of)
                 .await?
         } else if let Some(p) = &n.one_time_product_notification {
-            self.product_snapshots(credentials, &p.purchase_token, as_of)
-                .await?
+            match self
+                .product_snapshots(credentials, &p.purchase_token, as_of)
+                .await
+            {
+                // Consumed purchases, rentals: acknowledged, but nothing to store.
+                Err(AdapterError::Unsupported(_)) => vec![],
+                result => result?,
+            }
         } else if let Some(v) = &n.voided_purchase_notification {
             self.voided_snapshots(credentials, v, as_of).await?
         } else {
@@ -587,6 +595,14 @@ struct ProductV2 {
 #[serde(rename_all = "camelCase")]
 struct ProductLineItem {
     product_id: String,
+    product_offer_details: Option<ProductOfferDetails>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProductOfferDetails {
+    consumption_state: Option<String>,
+    rent_offer_details: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -667,6 +683,32 @@ fn subscription_snapshot(
         store_customer_id: None,
         as_of,
     }))
+}
+
+/// One-time products are lifetime purchases. Refused: consumed purchases (Play has no
+/// consumable product type, but a consumed purchase is used up) and rentals (Play does
+/// not report the rental's end), since either would otherwise grant forever.
+fn lifetime_product(product: &ProductV2) -> Result<(), AdapterError> {
+    for item in &product.product_line_item {
+        let Some(offer) = &item.product_offer_details else {
+            continue;
+        };
+        if offer.consumption_state.as_deref() == Some(CONSUMED) {
+            return Err(AdapterError::Unsupported(format!(
+                "Google Play product {} was consumed: entitle supports subscriptions and \
+                 non-consumed one-time products only",
+                item.product_id
+            )));
+        }
+        if offer.rent_offer_details.is_some() {
+            return Err(AdapterError::Unsupported(format!(
+                "Google Play product {} is a rental: entitle supports subscriptions and \
+                 one-time purchases only",
+                item.product_id
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Maps a productsv2 resource. `None` for pending purchases (not paid yet).

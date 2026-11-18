@@ -37,7 +37,7 @@ Every non-2xx response has this body:
 | 409 | `transfer_refused` | `/sync` of a purchase whose store account token belongs to another customer |
 | 413 | `payload_too_large` | request body over 2 MB |
 | 422 | `store_credentials` | the project's store credentials were rejected |
-| 422 | `unsupported_purchase` | `/sync` of a purchase type entitle cannot represent: App Store consumables and non-renewing subscriptions (only auto-renewable subscriptions and non-consumables are supported) |
+| 422 | `unsupported_purchase` | `/sync` of a purchase type entitle cannot represent: App Store consumables and non-renewing subscriptions (only auto-renewable subscriptions and non-consumables are supported), consumed Google Play purchases and Google Play rentals |
 | 429 | `rate_limited` | over a request budget (see "Request budgets"); retry after `Retry-After` seconds |
 | 501 | `not_implemented` | the store adapter is not implemented yet |
 | 502 | `store_unavailable` | the store API failed; retry later |
@@ -130,7 +130,10 @@ Returned by most `/v1` endpoints.
 - One-time purchases grant forever unless refunded/revoked. On the App Store only
   non-consumables count as one-time; consumables and non-renewing subscriptions are
   not supported (`/sync` answers 422 `unsupported_purchase`, their notifications are
-  acknowledged and ignored).
+  acknowledged and ignored). Google Play has no consumable product type: a one-time
+  purchase counts as one-time until the app consumes it; consumed purchases and
+  rentals are not supported in the same way. Don't attach consumable products to
+  entitlements.
 - Sandbox purchases grant nothing unless the project's `sandbox_grants_entitlements` is on
   (off by default).
 - Several sources for one entitlement: the latest expiry wins (lifetime beats any
