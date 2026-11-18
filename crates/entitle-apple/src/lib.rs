@@ -130,7 +130,7 @@ impl AppleAdapter {
         let tx = verify_response(signed_transaction, |s| {
             verifier.verify_and_decode_signed_transaction(s)
         })?;
-        if tx.r#type != Some(ProductType::AutoRenewableSubscription) {
+        if purchase_kind(&tx)? == PurchaseKind::OneTime {
             let as_of = required(tx.signed_date, "signedDate")?;
             return snapshot(tx, None, None, as_of, false);
         }
@@ -209,6 +209,10 @@ impl StoreAdapter for AppleAdapter {
         let tx = verifier
             .verify_and_decode_signed_transaction(&signed_transaction)
             .map_err(verify_error)?;
+        // Consumables, non-renewing subscriptions: acknowledged, but nothing to store.
+        if matches!(purchase_kind(&tx), Err(AdapterError::Unsupported(_))) {
+            return Ok(empty);
+        }
         let renewal = data
             .signed_renewal_info
             .map(|s| verifier.verify_and_decode_renewal_info(&s))
@@ -305,6 +309,24 @@ fn notification_environment(payload: &ResponseBodyV2DecodedPayload) -> AppleEnvi
     }
 }
 
+/// Auto-renewable subscriptions and non-consumables (lifetime). Anything else is refused:
+/// consumables are used up, and a non-renewing subscription's term is set by the app, not
+/// reported by Apple, so either would otherwise grant forever.
+fn purchase_kind(tx: &JWSTransactionDecodedPayload) -> Result<PurchaseKind, AdapterError> {
+    match &tx.r#type {
+        Some(ProductType::AutoRenewableSubscription) => Ok(PurchaseKind::Subscription),
+        Some(ProductType::NonConsumable) => Ok(PurchaseKind::OneTime),
+        other => Err(AdapterError::Unsupported(format!(
+            "App Store product type {}: entitle supports auto-renewable subscriptions and \
+             non-consumables only",
+            other
+                .as_ref()
+                .map_or("missing".to_owned(), |t| serde_json::to_string(t)
+                    .unwrap_or_default())
+        ))),
+    }
+}
+
 /// Normalize one verified transaction (+ renewal info and Apple's subscription status).
 fn snapshot(
     tx: JWSTransactionDecodedPayload,
@@ -313,11 +335,7 @@ fn snapshot(
     as_of: DateTime<Utc>,
     revoked: bool,
 ) -> Result<PurchaseSnapshot, AdapterError> {
-    let kind = if tx.r#type == Some(ProductType::AutoRenewableSubscription) {
-        PurchaseKind::Subscription
-    } else {
-        PurchaseKind::OneTime
-    };
+    let kind = purchase_kind(&tx)?;
     let expires_at = match kind {
         PurchaseKind::Subscription => Some(required(tx.expires_date, "expiresDate")?),
         PurchaseKind::OneTime => None,

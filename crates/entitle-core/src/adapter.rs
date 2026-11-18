@@ -61,6 +61,9 @@ pub enum AdapterError {
     /// Store API failed or is unreachable; the store should retry. Server answers 502.
     #[error("store API error: {0}")]
     Upstream(String),
+    /// A purchase type entitle cannot represent (e.g. a consumable). Server answers 422.
+    #[error("unsupported purchase: {0}")]
+    Unsupported(String),
     /// Phase-1 stub. Server answers 501.
     #[error("not implemented")]
     NotImplemented,

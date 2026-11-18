@@ -60,6 +60,9 @@ impl ApiError {
                 AdapterError::Credentials(_) => {
                     (StatusCode::UNPROCESSABLE_ENTITY, "store_credentials")
                 }
+                AdapterError::Unsupported(_) => {
+                    (StatusCode::UNPROCESSABLE_ENTITY, "unsupported_purchase")
+                }
                 AdapterError::Upstream(_) => (StatusCode::BAD_GATEWAY, "store_unavailable"),
                 AdapterError::NotImplemented => (StatusCode::NOT_IMPLEMENTED, "not_implemented"),
             },

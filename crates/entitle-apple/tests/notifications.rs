@@ -211,6 +211,16 @@ async fn one_time_purchase_never_expires() {
 }
 
 #[tokio::test]
+async fn consumables_and_non_renewing_subscriptions_are_acknowledged_without_snapshots() {
+    for product_type in ["Consumable", "Non-Renewing Subscription"] {
+        let mut fixture = fixture!("one_time_charge");
+        fixture["data"]["transaction"]["type"] = product_type.into();
+        let parsed = parse(fixture).await;
+        assert!(parsed.snapshots.is_empty(), "{product_type}");
+    }
+}
+
+#[tokio::test]
 async fn test_notification_has_no_snapshots() {
     let parsed = parse(fixture!("test")).await;
     assert_eq!(parsed.event_id, "7f1c1e8a-1f0e-4a5b-9a51-000000000015");

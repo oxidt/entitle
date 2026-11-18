@@ -72,6 +72,7 @@ Rules:
   | `Malformed(_)` | 400 | unparsable payload (store will not fix it by retrying) |
   | `NotFound` | 404 | `fetch_purchases`: unknown id |
   | `Credentials(_)` | 422 | missing/invalid credentials, store rejected auth |
+  | `Unsupported(_)` | 422 | a purchase type entitle cannot represent (App Store consumables, non-renewing subscriptions) |
   | `Upstream(_)` | 502 | store API down / 5xx / timeout (store retries the webhook) |
   | `NotImplemented` | 501 | phase-1 stubs only |
 
@@ -182,6 +183,10 @@ Docker builds work): `Client::new(api_key, test_mode)` (or `with_base_url`, used
   Info (`/inApps/v1/transactions/{transactionId}`) for one-time purchases. Try
   production, fall back to sandbox on 404, and on 401 (production rejects apps
   that have no release yet).
+- Product `type`: `Auto-Renewable Subscription` → `Subscription`, `Non-Consumable` →
+  `OneTime` (lifetime). Anything else (consumables, non-renewing subscriptions, whose
+  term the app defines, missing or future types) → `Unsupported` from
+  `fetch_purchases`; notifications for them carry no snapshots.
 - `period_type` from `offerType` (1 intro → `Intro`, free trial → `Trial`).
 - `check_credentials`: Request a Test Notification in sandbox
   (`POST /inApps/v1/notifications/test`). Proves key, issuer and bundle id, and

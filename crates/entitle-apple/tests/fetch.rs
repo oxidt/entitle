@@ -172,6 +172,37 @@ async fn family_shared_revocation_from_the_api_is_revoked() {
 }
 
 #[tokio::test]
+async fn only_subscriptions_and_non_consumables_are_supported() {
+    for product_type in [
+        Some("Consumable"),
+        Some("Non-Renewing Subscription"),
+        Some("Some Future Type"),
+        None,
+    ] {
+        let ca = TestCa::new();
+        let production = MockServer::start().await;
+        let (mut tx, _) = signed_data(fixture!("one_time_charge"), "Production");
+        match product_type {
+            Some(t) => tx["type"] = t.into(),
+            None => drop(tx.as_object_mut().unwrap().remove("type")),
+        }
+        mount_transaction(&production, &ca, "2000000200000001", &tx).await;
+        let err = ca
+            .adapter(&production.uri(), "http://127.0.0.1:9")
+            .fetch_purchases(&credentials(), "2000000200000001")
+            .await
+            .unwrap_err();
+        let AdapterError::Unsupported(message) = err else {
+            panic!("{product_type:?}: {err:?}");
+        };
+        assert!(
+            message.contains(product_type.unwrap_or("missing")),
+            "{message}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn unknown_everywhere_is_not_found() {
     let ca = TestCa::new();
     let production = MockServer::start().await;
