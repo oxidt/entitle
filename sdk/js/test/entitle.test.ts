@@ -286,6 +286,14 @@ describe("getCustomerInfo", () => {
     expect(await storage.get("entitle:customer_info")).toBeNull();
   });
 
+  test("inherited object properties are not entitlements", async () => {
+    const { entitle } = await setup({ replies: [json(info("x"))] });
+    await entitle.getCustomerInfo();
+    for (const id of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(entitle.isEntitled(id)).toBe(false);
+    }
+  });
+
   test("locally expired entitlements are not active", async () => {
     setSystemTime(new Date("2026-10-01T00:00:00Z"));
     const i = info("x", ["pro"]);

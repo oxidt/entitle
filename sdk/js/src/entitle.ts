@@ -142,7 +142,7 @@ export class Entitle {
 
   /** Whether the cached customer info grants `identifier` (sync). */
   isEntitled(identifier: string): boolean {
-    return identifier in this.activeEntitlements;
+    return Object.hasOwn(this.activeEntitlements, identifier);
   }
 
   /** Cached for {@link CACHE_TTL_MS}; `fresh: true` always asks the server. */
