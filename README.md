@@ -39,6 +39,7 @@ cargo run --bin entitle                  # listens on ENTITLE_BIND (default 0.0.
 ```
 
 Or everything in Docker: `docker compose --profile app up --build`.
+Prebuilt images: `ghcr.io/oxidt/entitle:latest` (every commit on `main` is also tagged with its sha).
 
 | Variable | Required | Meaning |
 |---|---|---|
